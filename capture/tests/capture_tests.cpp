@@ -173,11 +173,12 @@ struct Run {
     std::unique_ptr<CaptureSession> session;
 };
 
-Run make_run(const RunConfig& config, FakeFaults faults = {}, bool transmit = true) {
+Run make_run(const RunConfig& config, FakeFaults faults = {}, bool transmit = true, CaptureOptions options = {}) {
     Run run;
+    options.transmit = transmit;
     run.session = std::make_unique<CaptureSession>(
         config, std::make_unique<FakeRadio>(config.device.master_clock_rate_hz, std::move(faults), run.radio_log),
-        run.run_log, CaptureOptions{transmit});
+        run.run_log, std::move(options));
     return run;
 }
 
@@ -513,6 +514,182 @@ void test_request_stop_ends_run_promptly() {
     CHECK(!run.session->status().running);
 }
 
+// ----- live callbacks -----
+
+bool same_record(const BurstRecord& a, const BurstRecord& b) {
+    return a.index == b.index && a.sweep == b.sweep && a.step == b.step && a.sample_offset == b.sample_offset &&
+           a.num_samples == b.num_samples && a.usrp_ticks == b.usrp_ticks && a.tx_freq_hz == b.tx_freq_hz &&
+           a.rx_freq_hz == b.rx_freq_hz && a.lo_offset_hz == b.lo_offset_hz && a.tx_gain_db == b.tx_gain_db &&
+           a.rx_gain_db == b.rx_gain_db && a.error_flags == b.error_flags;
+}
+
+bool same_sync(const ClockSyncRecord& a, const ClockSyncRecord& b) {
+    return a.usrp_ticks == b.usrp_ticks && a.host_monotonic_ns == b.host_monotonic_ns &&
+           a.host_realtime_ns == b.host_realtime_ns && a.round_trip_ns == b.round_trip_ns;
+}
+
+// What a callback saw. Written only from the control thread; read after wait().
+struct Seen {
+    std::vector<BurstRecord> bursts;
+    std::vector<const Sample*> iq;
+    std::vector<std::size_t> counts;
+    std::vector<Sample> first;
+    std::vector<Sample> last;
+    std::vector<int> tunes_at_call;
+    std::vector<ClockSyncRecord> syncs;
+    std::set<std::thread::id> threads;
+};
+
+CaptureOptions recording_options(Seen& seen, const std::shared_ptr<FakeRadio::Log>& radio_log) {
+    seen.bursts.reserve(1000);
+    CaptureOptions options;
+    options.on_burst = [&seen, radio_log](const BurstRecord& record, const Sample* iq, std::size_t count) {
+        seen.tunes_at_call.push_back(radio_log->tunes.load());
+        seen.bursts.push_back(record);
+        seen.iq.push_back(iq);
+        seen.counts.push_back(count);
+        seen.first.push_back(iq[0]);
+        seen.last.push_back(iq[count - 1]);
+        seen.threads.insert(std::this_thread::get_id());
+    };
+    options.on_clock_sync = [&seen](const ClockSyncRecord& sync) {
+        seen.syncs.push_back(sync);
+        seen.threads.insert(std::this_thread::get_id());
+    };
+    return options;
+}
+
+void test_callbacks_see_every_final_burst_and_sync() {
+    RunConfig c = fast_config();
+    c.timing.clock_sync_interval_s = 0.002;
+    FakeFaults faults;
+    faults.rx_flags[3] = kBurstOverflow;  // receive call 3 = burst 3, half filled
+    faults.unlocked_tunes.insert(6);      // burst 4: no stream, slot stays zero
+    Seen seen;
+    Run run;
+    run.session = std::make_unique<CaptureSession>(
+        c, std::make_unique<FakeRadio>(c.device.master_clock_rate_hz, faults, run.radio_log), run.run_log,
+        recording_options(seen, run.radio_log));
+    run.session->start();
+    run.session->wait();
+
+    const auto& bursts = run.session->bursts();
+    const std::size_t span = burst_samples(c);
+    CHECK(!run.session->fatal_error());
+    CHECK(bursts.size() > 8);
+    CHECK(seen.bursts.size() == bursts.size());  // one call per burst
+    for (std::size_t i = 0; i < std::min(seen.bursts.size(), bursts.size()); ++i) {
+        CHECK(same_record(seen.bursts[i], bursts[i]));  // in order, final values
+        CHECK(seen.counts[i] == span);
+        CHECK(seen.iq[i] == seen.iq[0] + i * span);  // the burst's own slot
+        // Delivered after the NEXT burst was retuned and commanded (overlap), except the last.
+        CHECK(seen.tunes_at_call[i] == static_cast<int>(i) + (i + 1 < bursts.size() ? 4 : 3));
+    }
+    // The IQ was complete when the callback ran (fake fills real = receive call number).
+    CHECK(seen.first[2] == Sample(2, 0));
+    CHECK(seen.last[2] == Sample(2, static_cast<int16_t>((span - 1) & 0x7fff)));
+    CHECK(seen.first[3] == Sample(3, 0));
+    CHECK(seen.last[3] == Sample(0, 0));  // the faulted burst's missing half is zero
+    CHECK(seen.first[4] == Sample(0, 0));  // unlocked: nothing received
+    CHECK(seen.first[5] == Sample(4, 0));
+
+    CHECK(run.session->clock_sync().size() >= 3);
+    CHECK(seen.syncs.size() == run.session->clock_sync().size());
+    for (std::size_t i = 0; i < std::min(seen.syncs.size(), run.session->clock_sync().size()); ++i) {
+        CHECK(same_sync(seen.syncs[i], run.session->clock_sync()[i]));
+    }
+    CHECK(seen.threads.size() == 1);
+    CHECK(seen.threads.count(std::this_thread::get_id()) == 0);  // the control thread, not ours
+
+    const CaptureStatus status = run.session->status();
+    CHECK(status.callback_errors == 0);
+    CHECK(status.max_callback_s >= 0 && status.max_callback_s < 1);
+    CHECK(!status.failed);
+    CHECK(status.bursts == bursts.size());
+    CHECK(status.ram_slots == run.session->budget().ram_slots);
+    CHECK(status.last_error_flags == kBurstLoNotLocked);  // burst 4 is the latest invalid one
+    const double rate = c.device.master_clock_rate_hz;
+    CHECK(status.sweeps == (bursts.size() - 1) / 2);
+    CHECK(status.max_sweep_period_s >= status.mean_sweep_period_s && status.mean_sweep_period_s > 0);
+    CHECK_NEAR(status.elapsed_s, (bursts.back().usrp_ticks - run.session->clock_sync().front().usrp_ticks) / rate,
+               1e-9);
+    int64_t max_gap = 0;
+    for (std::size_t i = 1; i < bursts.size(); ++i) {
+        max_gap = std::max(max_gap, bursts[i].usrp_ticks - bursts[i - 1].usrp_ticks);
+    }
+    CHECK_NEAR(status.max_burst_gap_s, max_gap / rate, 1e-9);
+}
+
+void test_slow_callback_does_not_change_burst_flags() {
+    // The fake never reports lateness by itself, so this guards the session's own logic: a slow
+    // consumer must not turn into flagged, dropped or overlapping bursts.
+    const RunConfig c = fast_config();
+    CaptureOptions options;
+    std::atomic<int> calls{0};
+    options.on_burst = [&calls](const BurstRecord&, const Sample*, std::size_t) {
+        ++calls;
+        std::this_thread::sleep_for(std::chrono::milliseconds(3));  // ~15x the fake's burst time
+    };
+    Run slow = make_run(c, {}, true, std::move(options));
+    slow.session->start();
+    slow.session->wait();
+    CHECK(!slow.session->fatal_error());
+    CHECK(slow.session->bursts().size() >= 10);
+    CHECK(calls == static_cast<int>(slow.session->bursts().size()));
+    for (const BurstRecord& burst : slow.session->bursts()) {
+        CHECK(burst.error_flags == kBurstOk);
+    }
+    CHECK(slow.session->status().invalid_bursts == 0);
+    CHECK(slow.radio_log->tune_during_burst == 0);
+    CHECK(slow.session->status().max_callback_s >= 0.003);
+    // The slow callback stretches the spacing, as documented, and status shows it.
+    CHECK(slow.session->status().max_burst_gap_s >= 0.003);
+}
+
+void test_throwing_callback_does_not_end_the_run() {
+    const RunConfig c = fast_config();
+    CaptureOptions options;
+    std::atomic<int> calls{0};
+    options.on_burst = [&calls](const BurstRecord& record, const Sample*, std::size_t) {
+        ++calls;
+        if (record.index % 2 == 0) {
+            throw std::runtime_error("consumer broke");
+        }
+    };
+    options.on_clock_sync = [](const ClockSyncRecord&) { throw 42; };
+    Run run = make_run(c, {}, true, std::move(options));
+    run.session->start();
+    run.session->wait();
+    const auto& bursts = run.session->bursts();
+    CHECK(!run.session->fatal_error());
+    CHECK(bursts.size() >= 10);  // ran to its normal end (RAM full or max_run_s)
+    CHECK(calls == static_cast<int>(bursts.size()));
+    CHECK(run.session->status().invalid_bursts == 0);
+    CHECK(run.session->status().callback_errors == (bursts.size() + 1) / 2 + run.session->clock_sync().size());
+    int logged = 0;
+    for (const std::string& line : run.run_log->lines()) {
+        logged += line.find("callback threw") != std::string::npos ? 1 : 0;
+    }
+    CHECK(logged == 1);
+}
+
+void test_callbacks_deliver_bursts_before_a_radio_failure() {
+    FakeFaults faults;
+    faults.rx_throw_at = 4;
+    const RunConfig c = fast_config();
+    Seen seen;
+    Run run;
+    run.session = std::make_unique<CaptureSession>(
+        c, std::make_unique<FakeRadio>(c.device.master_clock_rate_hz, faults, run.radio_log), run.run_log,
+        recording_options(seen, run.radio_log));
+    run.session->start();
+    run.session->wait();
+    CHECK(run.session->status().failed);
+    CHECK(seen.bursts.size() == 5);
+    CHECK(seen.bursts.size() == run.session->bursts().size());
+    CHECK(!seen.bursts.empty() && (seen.bursts.back().error_flags & kBurstRadioError));
+}
+
 void test_destructor_stops_a_running_session() {
     Run run = make_run(fast_config(30));
     run.session->start();
@@ -616,6 +793,10 @@ int main() {
         T(test_timestamp_mismatch_invalidates),
         T(test_radio_failure_ends_run_and_keeps_data),
         T(test_request_stop_ends_run_promptly),
+        T(test_callbacks_see_every_final_burst_and_sync),
+        T(test_slow_callback_does_not_change_burst_flags),
+        T(test_throwing_callback_does_not_end_the_run),
+        T(test_callbacks_deliver_bursts_before_a_radio_failure),
         T(test_destructor_stops_a_running_session),
         T(test_session_runs_once),
         T(test_dataset_layout_and_contents),

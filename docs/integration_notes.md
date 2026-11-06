@@ -67,7 +67,12 @@ near full gain the RX port's limit of about -15 dBm could be exceeded. The cap o
   take seconds if it has to load the FPGA. `write_dataset` syncs to disk and hashes every file. Keep all
   of these off any time-critical stack thread.
 - **Thread safety:** `status()` and `request_stop()` are safe from any thread. Read `bursts()`,
-  `clock_sync()` and `fatal_error()`, and call `write_dataset()`, only after `wait()`.
+  `clock_sync()` and `fatal_error()`, and call `write_dataset()`, only after `wait()`. `status()` also
+  carries live sweep period, burst gap, RAM use and callback timing.
+- **Live data:** `CaptureOptions::on_burst` and `on_clock_sync` deliver each burst (record plus its IQ)
+  and each clock-sync row during the run, on the timing thread. The IQ pointer is valid only during the
+  call. Copy and return: no blocking, contended locks or heavy allocation. The full contract is in
+  `capture_session.hpp`.
 - **Signals:** the library installs no signal handlers. The stack decides how a stop is requested.
 - **Ways a run ends:** `request_stop()`, `timing.max_run_s`, a full RAM buffer, or a radio failure. After
   a failure, `fatal_error()` is set and the bursts captured so far can still be written.

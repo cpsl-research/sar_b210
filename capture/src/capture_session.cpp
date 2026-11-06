@@ -146,7 +146,7 @@ CaptureSession::CaptureSession(RunConfig config, std::unique_ptr<Radio> radio, s
     : config_(checked(config)),
       radio_(std::move(radio)),
       log_(std::move(log)),
-      options_(options),
+      options_(std::move(options)),
       budget_(compute_budget(config_)),
       chirp_(generate_chirp(config_)),
       tx_burst_(make_tx_burst(config_, chirp_)),
@@ -200,7 +200,68 @@ void CaptureSession::wait() {
     }
 }
 
-CaptureStatus CaptureSession::status() const { return {running_.load(), burst_count_.load(), invalid_count_.load()}; }
+CaptureStatus CaptureSession::status() const {
+    constexpr auto relaxed = std::memory_order_relaxed;
+    const double rate = config_.device.master_clock_rate_hz;
+    CaptureStatus s;
+    s.running = running_.load();
+    s.failed = failed_.load();
+    s.bursts = burst_count_.load();
+    s.invalid_bursts = invalid_count_.load();
+    s.ram_slots = iq_.num_slots();
+    s.elapsed_s = static_cast<double>(elapsed_ticks_.load(relaxed)) / rate;
+    s.sweeps = sweep_count_.load(relaxed);
+    s.last_sweep_period_s = static_cast<double>(last_sweep_ticks_.load(relaxed)) / rate;
+    s.mean_sweep_period_s = static_cast<double>(mean_sweep_ticks_.load(relaxed)) / rate;
+    s.max_sweep_period_s = static_cast<double>(max_sweep_ticks_.load(relaxed)) / rate;
+    s.max_burst_gap_s = static_cast<double>(max_gap_ticks_.load(relaxed)) / rate;
+    s.last_error_flags = last_error_flags_.load(relaxed);
+    s.callback_errors = callback_errors_.load(relaxed);
+    s.max_callback_s = static_cast<double>(max_callback_ns_.load(relaxed)) * 1e-9;
+    return s;
+}
+
+void CaptureSession::callback_finished(int64_t started_ns, const char* failure) noexcept {
+    const int64_t took = clock_ns(CLOCK_MONOTONIC) - started_ns;
+    if (took > max_callback_ns_.load(std::memory_order_relaxed)) {
+        max_callback_ns_.store(took, std::memory_order_relaxed);  // only this thread writes it
+    }
+    if (failure != nullptr && callback_errors_.fetch_add(1, std::memory_order_relaxed) == 0) {
+        try {  // log the first only: a callback that throws every burst must not flood the log
+            log_->add(std::string("WARNING: capture callback threw: ") + failure +
+                      " (the run continues; further callback errors are only counted)");
+        } catch (...) {
+        }
+    }
+}
+
+void CaptureSession::deliver_burst(std::size_t index) noexcept {
+    const int64_t started = clock_ns(CLOCK_MONOTONIC);
+    try {
+        options_.on_burst(bursts_[index], iq_.slot(index), static_cast<std::size_t>(bursts_[index].num_samples));
+    } catch (const std::exception& error) {
+        callback_finished(started, error.what());
+        return;
+    } catch (...) {
+        callback_finished(started, "unknown exception");
+        return;
+    }
+    callback_finished(started, nullptr);
+}
+
+void CaptureSession::deliver_clock_sync(const ClockSyncRecord& sync) noexcept {
+    const int64_t started = clock_ns(CLOCK_MONOTONIC);
+    try {
+        options_.on_clock_sync(sync);
+    } catch (const std::exception& error) {
+        callback_finished(started, error.what());
+        return;
+    } catch (...) {
+        callback_finished(started, "unknown exception");
+        return;
+    }
+    callback_finished(started, nullptr);
+}
 
 bool CaptureSession::wait_for_lock() {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::duration<double>(config_.timing.lock_timeout_s);
@@ -221,6 +282,9 @@ void CaptureSession::record_clock_sync() {
     // The realtime read came just after the query, so move it back to the same midpoint.
     const int64_t midpoint = before + (after - before) / 2;
     clock_sync_.push_back({ticks, midpoint, realtime - (clock_ns(CLOCK_MONOTONIC) - midpoint), after - before});
+    if (options_.on_clock_sync) {
+        deliver_clock_sync(clock_sync_.back());
+    }
 }
 
 void CaptureSession::control_loop() {
@@ -231,6 +295,17 @@ void CaptureSession::control_loop() {
     const int64_t max_run_ticks = seconds_to_ticks(config_, config_.timing.max_run_s);
     const int64_t sync_ticks = seconds_to_ticks(config_, config_.timing.clock_sync_interval_s);
     const std::size_t samples = burst_samples(config_);
+
+    // The burst whose callback has not run yet. It is delivered once the next burst is commanded,
+    // so the callback overlaps that burst's flight time instead of adding to the burst period.
+    constexpr std::size_t kNone = static_cast<std::size_t>(-1);
+    std::size_t undelivered = kNone;
+    const auto deliver_undelivered = [this, &undelivered] {
+        if (undelivered != kNone) {
+            deliver_burst(undelivered);
+            undelivered = kNone;
+        }
+    };
 
     try {
         int64_t first_tick = -1;  // set by the RX worker, read after rx.wait()
@@ -257,6 +332,13 @@ void CaptureSession::control_loop() {
         record_clock_sync();
         const int64_t run_start = clock_sync_.back().usrp_ticks;
         int64_t next_sync = run_start + sync_ticks;
+        // Status statistics, kept in locals and published with relaxed stores.
+        int64_t previous_ticks = 0;
+        int64_t first_sweep_ticks = -1;
+        int64_t sweep_start_ticks = -1;
+        int64_t max_gap = 0;
+        int64_t max_sweep = 0;
+        uint64_t sweeps = 0;
 
         for (uint32_t sweep = 0; !stop_; ++sweep) {
             for (int step = 0; step < config_.waveform.num_steps && !stop_; ++step) {
@@ -288,6 +370,7 @@ void CaptureSession::control_loop() {
 
                 if (!locked) {
                     record.error_flags = kBurstLoNotLocked;  // an unlocked LO could radiate off frequency
+                    deliver_undelivered();                   // nothing in flight to overlap with
                 } else {
                     const int64_t tps = ticks_per_sample(config_);
                     const int64_t rx_tick = (now + wait_ticks + tps - 1) / tps * tps;
@@ -296,6 +379,9 @@ void CaptureSession::control_loop() {
                     if (tx) {
                         tx->post(job);
                     }
+                    // This burst's commands are issued and its timing fixed; the previous burst's
+                    // callback runs while it is in flight (and touches only the previous slot).
+                    deliver_undelivered();
                     record.error_flags = rx.wait();
                     if (tx) {
                         record.error_flags |= tx->wait();
@@ -307,12 +393,40 @@ void CaptureSession::control_loop() {
                     }
                 }
 
-                bursts_.push_back(record);
+                bursts_.push_back(record);  // capacity reserved: no reallocation, references stay valid
+                if (options_.on_burst) {
+                    undelivered = index;
+                }
                 ++burst_count_;
                 if (record.error_flags != kBurstOk) {
                     ++invalid_count_;
+                    last_error_flags_.store(record.error_flags, std::memory_order_relaxed);
                     log_->add("burst " + std::to_string(index) + " invalid: " + describe_burst_errors(record.error_flags));
                 }
+
+                constexpr auto relaxed = std::memory_order_relaxed;
+                elapsed_ticks_.store(record.usrp_ticks - run_start, relaxed);
+                if (index > 0 && record.usrp_ticks - previous_ticks > max_gap) {
+                    max_gap = record.usrp_ticks - previous_ticks;
+                    max_gap_ticks_.store(max_gap, relaxed);
+                }
+                previous_ticks = record.usrp_ticks;
+                if (step == 0) {
+                    if (sweep_start_ticks >= 0) {
+                        const int64_t period = record.usrp_ticks - sweep_start_ticks;
+                        ++sweeps;
+                        max_sweep = std::max(max_sweep, period);
+                        last_sweep_ticks_.store(period, relaxed);
+                        max_sweep_ticks_.store(max_sweep, relaxed);
+                        mean_sweep_ticks_.store((record.usrp_ticks - first_sweep_ticks) / static_cast<int64_t>(sweeps),
+                                                relaxed);
+                        sweep_count_.store(sweeps, relaxed);
+                    } else {
+                        first_sweep_ticks = record.usrp_ticks;
+                    }
+                    sweep_start_ticks = record.usrp_ticks;
+                }
+
                 if (record.error_flags & kBurstRadioError) {
                     const std::string detail = !rx.error().empty() ? rx.error() : (tx ? tx->error() : "");
                     throw std::runtime_error(detail);
@@ -326,11 +440,14 @@ void CaptureSession::control_loop() {
                 }
             }
         }
+        deliver_undelivered();
         record_clock_sync();
     } catch (const std::exception& error) {
         fatal_error_ = error.what();
         log_->add(std::string("FATAL: ") + error.what());
+        failed_ = true;
     }
+    deliver_undelivered();  // after a fatal error: the bursts recorded so far are still delivered
     running_ = false;
 }
 

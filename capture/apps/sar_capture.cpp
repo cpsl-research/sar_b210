@@ -90,7 +90,9 @@ int main(int argc, char** argv) {
         if (duration_s > 0) {
             log->add("--duration overrides timing.max_run_s in config.yaml: " + std::to_string(duration_s) + " s");
         }
-        sar::CaptureSession session(config, sar::make_uhd_radio(config, log, !rx_only), log, {!rx_only});
+        sar::CaptureOptions options;
+        options.transmit = !rx_only;
+        sar::CaptureSession session(config, sar::make_uhd_radio(config, log, !rx_only), log, options);
 
         std::signal(SIGINT, on_interrupt);
         std::signal(SIGTERM, on_interrupt);
