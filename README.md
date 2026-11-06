@@ -13,8 +13,9 @@ air. Python processing and the simulator are still stubs.
 
 ## Capture
 
-    export UHD_IMAGES_DIR=$HOME/.local/share/uhd/images   # wherever uhd_images_downloader put them
-    cmake -B build -G Ninja && cmake --build build
+    # Only if the FPGA images are not in apt UHD's default /usr/share/uhd/images:
+    #   export UHD_IMAGES_DIR=/path/to/images   # e.g. where uhd_images_downloader put them
+    cmake -S capture -B build -G Ninja && cmake --build build
     ./build/sar_capture_tests                             # no hardware needed
 
     ./build/sar_capture --check configs/default.yaml      # validate and print the budget; no radio

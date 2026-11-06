@@ -31,35 +31,35 @@ foreach(dep_dir IN ITEMS "${UHD_DIR}" "${Boost_DIR}" "${yaml-cpp_DIR}")
 endforeach()
 
 add_library(sar_capture_core STATIC
-  capture/src/budget.cpp
-  capture/src/capture_session.cpp
-  capture/src/chirp.cpp
-  capture/src/dataset_writer.cpp
-  capture/src/ram_buffer.cpp
-  capture/src/run_config.cpp
-  capture/src/sha256.cpp
-  capture/src/uhd_radio.cpp
+  src/budget.cpp
+  src/capture_session.cpp
+  src/chirp.cpp
+  src/dataset_writer.cpp
+  src/ram_buffer.cpp
+  src/run_config.cpp
+  src/sha256.cpp
+  src/uhd_radio.cpp
 )
 add_library(sar::capture ALIAS sar_capture_core)
-target_include_directories(sar_capture_core PUBLIC capture/include ${UHD_INCLUDE_DIRS})
+target_include_directories(sar_capture_core PUBLIC include ${UHD_INCLUDE_DIRS})
 target_link_libraries(sar_capture_core PUBLIC ${UHD_LIBRARIES} Boost::system yaml-cpp::yaml-cpp Threads::Threads)
 target_compile_options(sar_capture_core PRIVATE -Wall -Wextra)
 
 if(SAR_BUILD_APPS)
-  add_executable(sar_capture capture/apps/sar_capture.cpp)
+  add_executable(sar_capture apps/sar_capture.cpp)
   target_link_libraries(sar_capture PRIVATE sar_capture_core)
   target_compile_options(sar_capture PRIVATE -Wall -Wextra)
 
-  add_executable(sar_bench_probe capture/apps/sar_bench_probe.cpp)
+  add_executable(sar_bench_probe apps/sar_bench_probe.cpp)
   target_link_libraries(sar_bench_probe PRIVATE sar_capture_core)
   target_compile_options(sar_bench_probe PRIVATE -Wall -Wextra)
 endif()
 
 if(SAR_BUILD_TESTS)
   enable_testing()
-  add_executable(sar_capture_tests capture/tests/capture_tests.cpp)
+  add_executable(sar_capture_tests tests/capture_tests.cpp)
   target_link_libraries(sar_capture_tests PRIVATE sar_capture_core)
   target_compile_options(sar_capture_tests PRIVATE -Wall -Wextra)
-  target_compile_definitions(sar_capture_tests PRIVATE SAR_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+  target_compile_definitions(sar_capture_tests PRIVATE SAR_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/..")
   add_test(NAME sar_capture_tests COMMAND sar_capture_tests)
 endif()

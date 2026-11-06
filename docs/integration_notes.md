@@ -32,12 +32,15 @@ near full gain the RX port's limit of about -15 dBm could be exceeded. The cap o
 
 `scripts/check_host.sh` reports most of these without changing anything.
 
-- **`UHD_IMAGES_DIR`:** the stack's environment must set this, currently to
-  `$HOME/.local/share/uhd/images`. Without it the B210 will not load after a power cycle.
+- **`UHD_IMAGES_DIR`:** not needed with apt UHD, which finds its images in `/usr/share/uhd/images`. Set it
+  only for a non-default images directory (for example one filled by `uhd_images_downloader`); without
+  the images the B210 will not load after a power cycle.
 - **Thread priority:** the `rtprio` limit is 0, so streaming threads cannot raise their priority. There
   were no overflows without it on an idle host, but the stack adds CPU load. Retest under real load.
 - **Power and USB:** use the performance CPU governor, disable USB autosuspend, and run on AC power.
-  The bench host had none of these set.
+  Autosuspend can be off globally (`/sys/module/usbcore/parameters/autosuspend` = -1) or per device
+  (`power/control` = `on` on the Ettus device, 2500:002x, for example by a udev rule);
+  `scripts/check_host.sh` accepts either. The original bench host had none of these set.
 - **USB:** keep the B210 on its own USB 3 controller with no hub. It enumerated at 5 Gb/s on bus 4 here.
 - **Storage:** write datasets to the USB SSD. `/home` has about 2.5 GB free. A 60 s run is about 0.74 GB,
   and `write_dataset` refuses to start if space is short.
@@ -46,8 +49,10 @@ near full gain the RX port's limit of about -15 dBm could be exceeded. The cap o
 
 ## Linking
 
-- Use `add_subdirectory()` on this repo and link `sar::capture`. Apps and tests stay off by default
-  when this is not the top-level project.
+- Use `add_subdirectory()` on this repo's `capture/` directory and link `sar::capture`. Apps and tests
+  stay off by default when it is not the top-level project. `capture/` holds the only `CMakeLists.txt`
+  and a `COLCON_IGNORE`, so colcon can crawl the repo to the ROS packages without treating the
+  library as a package of its own.
 - It needs C++17, system UHD 4.6, Boost and yaml-cpp. It is a static library.
 - CMake stops if a dependency resolves inside conda, because system UHD is built against system Boost.
   Check that the stack's environment does not pull in a different Boost.

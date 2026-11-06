@@ -87,3 +87,23 @@ Validation stage 1 passed: 300 s with TX and RX running, 16404 bursts, none inva
 - USRP clock against host monotonic: 5.1 ppm drift over 300 s, which is why `clock_sync.csv` logs
   throughout a run. USRP time query round trip: median 0.22 ms, worst 0.51 ms.
 - Thread priority could not be raised (rtprio limit is 0); no overflows without it.
+
+## Working rules and invariants
+
+Carried over from the removed `CLAUDE.md`.
+
+- Values marked *start value* in the outline are tunable defaults. Values marked *measure* must be
+  measured on the hardware before they are relied on.
+- Fixed constraints (B210, 2 antennas, no RF hardware, stepped chirp, ground vehicle, laptop + USB
+  storage) are owner decisions. Ask before changing them. Owner decisions in this file override the
+  outline, including the 2.4 GHz ISM band and positioning by the autonomy stack (no IMU, attitude or
+  lever-arm code in this repo).
+- Work in task order T1-T10 (see README), building T9 early. Do not advance a validation stage until
+  the current one passes.
+- Each sub-band burst is its own pulse at its own position. Never stitch a sweep into one profile at one
+  position (no stop-and-go), except for parked tests.
+- Geometry is bistatic: R = |p_tx - x| + |p_rx - x|.
+- Burst timestamps, not host clock readings, are the ground truth for pulse timing.
+- Bad bursts are marked invalid in metadata, never silently dropped or shifted.
+- Device-specific values live in config only, so the same code can run on an X310.
+- Never transmit outside `permitted_band` in the config or above its EIRP cap.
