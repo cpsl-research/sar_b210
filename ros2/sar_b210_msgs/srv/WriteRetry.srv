@@ -1,0 +1,6 @@
+# Write the run folder held in RAM after a write failure (state write_failed).
+string path               # run folder to create; '' = a fresh unique path beside the failed one
+---
+bool accepted
+string message            # why it was refused, or what started
+string run_dir            # where the run folder will be written

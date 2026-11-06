@@ -1,7 +1,12 @@
 // Radio-free tests: nothing here opens a radio. The radio factory is a counter that throws.
 #include <gtest/gtest.h>
 
+#include <unistd.h>
+
 #include <atomic>
+#include <chrono>
+#include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <thread>
 
@@ -36,6 +41,65 @@ std::shared_ptr<sar_b210_ros::SarB210Node> make_node(const std::string& config_p
     opts.append_parameter_override("config_path", config_path);
     opts.append_parameter_override("write_run_folder", false);
     return std::make_shared<sar_b210_ros::SarB210Node>(opts, counting_factory);
+}
+
+// Radio-free stand-in: the real clock, no device. Enough for CaptureSession to run RX-only.
+class FakeRadio final : public sar::Radio {
+public:
+    explicit FakeRadio(double tick_rate) : tick_rate_(tick_rate), start_(std::chrono::steady_clock::now()) {}
+    Tuned tune(double f, double) override { return {f, f}; }
+    bool lo_locked() override { return true; }
+    int64_t time_now_ticks() override {
+        const std::chrono::duration<double> e = std::chrono::steady_clock::now() - start_;
+        return std::llround(e.count() * tick_rate_);
+    }
+    uint32_t send_burst(const sar::Sample*, std::size_t, int64_t) override { return sar::kBurstOk; }
+    Received receive_burst(sar::Sample* samples, std::size_t count, int64_t tick) override {
+        std::this_thread::sleep_for(std::chrono::microseconds(200));
+        for (std::size_t i = 0; i < count; ++i) samples[i] = sar::Sample(1, static_cast<int16_t>(i & 0x7fff));
+        return {sar::kBurstOk, count, tick};
+    }
+    double tx_gain_db() override { return 20; }
+    double rx_gain_db() override { return 30; }
+
+private:
+    double tick_rate_;
+    std::chrono::steady_clock::time_point start_;
+};
+
+std::unique_ptr<sar::Radio> fake_factory(const sar::RunConfig& c, std::shared_ptr<sar::RunLog>, bool) {
+    return std::make_unique<FakeRadio>(c.device.master_clock_rate_hz);
+}
+
+std::string set_key(std::string text, const std::string& key, const std::string& value) {
+    const auto at = text.find(key + ":");
+    const auto eol = text.find('\n', at);
+    text.replace(at, eol - at, key + ": " + value);
+    return text;
+}
+
+// A short RX-only run on the fake radio, written to run_root (which the test may make unwritable).
+std::shared_ptr<sar_b210_ros::SarB210Node> make_fake_node(const std::string& base, const std::string& run_root) {
+    std::string t = config_text(-1);
+    for (const auto& kv : {std::pair<const char*, const char*>{"rx_timestamp_offset_ticks", "0"},
+                           {"retune_s", "0"}, {"settle_margin_s", "0.001"}, {"command_lead_s", "0.0005"},
+                           {"lock_timeout_s", "0.005"}, {"clock_sync_interval_s", "0.02"}, {"max_run_s", "0.2"}}) {
+        t = set_key(t, kv.first, kv.second);
+    }
+    const std::string cfg = base + "/fast.yaml";
+    std::ofstream(cfg) << t;
+    rclcpp::NodeOptions opts;
+    opts.append_parameter_override("config_path", cfg);
+    opts.append_parameter_override("run_root", run_root);
+    opts.append_parameter_override("publish_iq", false);
+    return std::make_shared<sar_b210_ros::SarB210Node>(opts, fake_factory);
+}
+
+std::string fresh_dir(const std::string& name) {
+    const std::string d = ::testing::TempDir() + "/" + name + "_" + std::to_string(::getpid());
+    std::filesystem::remove_all(d);
+    std::filesystem::create_directories(d);
+    return d;
 }
 
 class NodeTest : public ::testing::Test {
@@ -92,6 +156,85 @@ TEST_F(NodeTest, RxOnlyStartFailsCleanlyWhenRadioCannotOpen) {
     EXPECT_TRUE(node->handle_start(false, "", 1.0).accepted);
     node->join_worker();
     EXPECT_EQ(g_radio_opens.load(), 2);
+}
+
+namespace fs = std::filesystem;
+using sar_b210_msgs::msg::SarStatus;
+
+TEST_F(NodeTest, WriteFailureKeepsDataRefusesStartRetryAndDiscard) {
+    const std::string base = fresh_dir("wf");
+    std::ofstream(base + "/blocker") << "a file, so no run folder can be created under it";
+    auto node = make_fake_node(base, base + "/blocker/runs");
+    const auto r = node->handle_start(false, "", 0);
+    ASSERT_TRUE(r.accepted) << r.message;
+    node->join_worker();
+    ASSERT_EQ(node->state(), SarStatus::STATE_WRITE_FAILED) << node->make_status().fatal_error;
+    auto st = node->make_status();
+    EXPECT_EQ(st.state_name, "write_failed");
+    EXPECT_NE(st.fatal_error.find("run folder not written"), std::string::npos) << st.fatal_error;
+    EXPECT_GT(st.bursts, 10u);
+    const uint64_t bursts = st.bursts;
+
+    // Start is refused, with the reason, and nothing was opened or changed.
+    const auto again = node->handle_start(false, "", 0);
+    EXPECT_FALSE(again.accepted);
+    EXPECT_NE(again.message.find("held in RAM"), std::string::npos) << again.message;
+    EXPECT_EQ(node->state(), SarStatus::STATE_WRITE_FAILED);
+
+    // Retry to an unwritable path keeps the data again.
+    const auto bad = node->handle_write_retry(base + "/blocker/other");
+    ASSERT_TRUE(bad.accepted) << bad.message;
+    node->join_worker();
+    EXPECT_EQ(node->state(), SarStatus::STATE_WRITE_FAILED);
+    EXPECT_EQ(node->make_status().bursts, bursts);
+
+    // Retry to a good path writes the same data and frees the hold.
+    const std::string good = base + "/good_run";
+    const auto ok = node->handle_write_retry(good);
+    ASSERT_TRUE(ok.accepted) << ok.message;
+    node->join_worker();
+    EXPECT_EQ(node->state(), SarStatus::STATE_DONE) << node->make_status().fatal_error;
+    st = node->make_status();
+    EXPECT_EQ(st.run_dir, good);
+    EXPECT_EQ(st.bursts, bursts);
+    EXPECT_TRUE(fs::exists(good + "/iq.sc16"));
+    EXPECT_TRUE(fs::exists(good + "/bursts.csv"));
+    EXPECT_FALSE(node->handle_write_retry("").accepted);  // nothing held any more
+    EXPECT_FALSE(node->handle_discard().accepted);
+    EXPECT_TRUE(node->handle_start(false, "", 0).accepted);  // a new run is allowed again
+    node->join_worker();
+}
+
+TEST_F(NodeTest, DiscardFreesHeldData) {
+    const std::string base = fresh_dir("dc");
+    std::ofstream(base + "/blocker") << "x";
+    auto node = make_fake_node(base, base + "/blocker/runs");
+    ASSERT_TRUE(node->handle_start(false, "", 0).accepted);
+    node->join_worker();
+    ASSERT_EQ(node->state(), SarStatus::STATE_WRITE_FAILED);
+    const auto d = node->handle_discard();
+    EXPECT_TRUE(d.accepted) << d.message;
+    EXPECT_EQ(node->state(), SarStatus::STATE_FAILED);
+    EXPECT_NE(node->make_status().fatal_error.find("discarded"), std::string::npos);
+    EXPECT_FALSE(node->handle_write_retry("").accepted);
+    ASSERT_TRUE(node->handle_start(false, "", 0).accepted);  // allowed after discard
+    node->join_worker();
+    EXPECT_EQ(node->state(), SarStatus::STATE_WRITE_FAILED);  // (same unwritable root again)
+    EXPECT_TRUE(node->handle_discard().accepted);
+}
+
+TEST_F(NodeTest, ExistingFolderIsRetriedOnceAtSuffixedPath) {
+    const std::string base = fresh_dir("ex");
+    auto node = make_fake_node(base, base + "/runs");
+    const auto r = node->handle_start(false, "", 0);
+    ASSERT_TRUE(r.accepted) << r.message;
+    fs::create_directories(r.run_dir);  // someone creates it while the run is in flight
+    node->join_worker();
+    ASSERT_EQ(node->state(), SarStatus::STATE_DONE) << node->make_status().fatal_error;
+    const auto st = node->make_status();
+    EXPECT_EQ(st.run_dir, r.run_dir + "_2");
+    EXPECT_TRUE(fs::exists(st.run_dir + "/iq.sc16"));
+    EXPECT_TRUE(st.fatal_error.empty());
 }
 
 TEST(SpscRing, DropsWhenFullNeverBlocksAndKeepsOrder) {

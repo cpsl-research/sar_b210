@@ -10,6 +10,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/SarClockSync.msg"
   "msg/SarStatus.msg"
   "srv/Start.srv"
+  "srv/WriteRetry.srv"
   DEPENDENCIES std_msgs
 )
 

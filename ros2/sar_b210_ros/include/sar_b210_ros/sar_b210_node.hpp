@@ -19,6 +19,7 @@
 #include "sar_b210_msgs/msg/sar_clock_sync.hpp"
 #include "sar_b210_msgs/msg/sar_status.hpp"
 #include "sar_b210_msgs/srv/start.hpp"
+#include "sar_b210_msgs/srv/write_retry.hpp"
 #include "sar_b210_ros/spsc_ring.hpp"
 
 namespace sar_b210_ros {
@@ -48,6 +49,10 @@ public:
     // here, before any radio is opened: busy, TX without the token, config/preflight errors.
     StartResult handle_start(bool transmit, const std::string& confirm, double duration_s);
     StartResult handle_stop();
+    // After a failed run-folder write the captured data is held in RAM (state write_failed). Retry
+    // writes it on the worker thread ('' = a fresh unique path beside the failed one); discard frees it.
+    StartResult handle_write_retry(const std::string& path);
+    StartResult handle_discard();
     uint8_t state() const { return state_.load(); }
     StatusMsg make_status() const;
     // Blocks until the worker thread has finished (tests, shutdown).
@@ -88,6 +93,13 @@ private:
     };
 
     void worker_main(sar::RunConfig config, bool transmit, std::string run_dir);
+    void retry_main(std::string run_dir);
+    // Writes the held session; with suffix_retry a "folder exists" failure is retried once at a unique
+    // suffixed path. Returns the error text ('' on success); dir is updated to where it was written.
+    std::string write_session(const sar::CaptureSession& session, std::string& dir, bool suffix_retry);
+    // Records the outcome under mu_: on a write error the session is kept, never freed.
+    void settle_write(std::shared_ptr<sar::CaptureSession> session, const std::string& dir,
+                      const std::string& run_failure, const std::string& write_error);
     void publisher_main(Run* run);
     void publish_status();
     void set_state(uint8_t s);
@@ -107,6 +119,8 @@ private:
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr config_pub_;
     rclcpp::Service<sar_b210_msgs::srv::Start>::SharedPtr start_srv_;
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr stop_srv_;
+    rclcpp::Service<sar_b210_msgs::srv::WriteRetry>::SharedPtr write_retry_srv_;
+    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr discard_srv_;
     rclcpp::TimerBase::SharedPtr status_timer_;
 
     std::atomic<uint8_t> state_{StatusMsg::STATE_IDLE};
@@ -118,6 +132,11 @@ private:
     Snapshot last_;
     std::string run_dir_;
     std::string fatal_error_;
+    // Data of a run whose folder could not be written (state write_failed); freed only by a
+    // successful write or an explicit discard.
+    std::shared_ptr<sar::CaptureSession> held_;
+    std::string held_dir_;
+    std::string held_run_failure_;
     bool transmit_ = false;
     double max_run_s_ = 0;
     double budget_sweep_s_ = 0, budget_step_s_ = 0;

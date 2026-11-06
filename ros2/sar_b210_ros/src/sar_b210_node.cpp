@@ -31,6 +31,7 @@ const char* state_name(uint8_t s) {
         case StatusMsg::STATE_WRITING: return "writing";
         case StatusMsg::STATE_DONE: return "done";
         case StatusMsg::STATE_FAILED: return "failed";
+        case StatusMsg::STATE_WRITE_FAILED: return "write_failed";
         default: return "unknown";
     }
 }
@@ -55,6 +56,16 @@ std::string expand_home(const std::string& path) {
         }
     }
     return path;
+}
+
+// base, or base_2, base_3, ... : the first path that does not exist yet.
+std::string unique_path(const fs::path& base) {
+    fs::path dir = base;
+    std::error_code ec;
+    for (int n = 2; fs::exists(dir, ec); ++n) {
+        dir = base.string() + "_" + std::to_string(n);
+    }
+    return dir.string();
 }
 
 std::string join_errors(const std::vector<std::string>& errors) {
@@ -114,6 +125,21 @@ SarB210Node::SarB210Node(const rclcpp::NodeOptions& options, RadioFactory radio_
             res->success = r.accepted;
             res->message = r.message;
         });
+    write_retry_srv_ = create_service<sar_b210_msgs::srv::WriteRetry>(
+        "b210/write_retry", [this](const std::shared_ptr<sar_b210_msgs::srv::WriteRetry::Request> req,
+                                   std::shared_ptr<sar_b210_msgs::srv::WriteRetry::Response> res) {
+            const StartResult r = handle_write_retry(req->path);
+            res->accepted = r.accepted;
+            res->message = r.message;
+            res->run_dir = r.run_dir;
+        });
+    discard_srv_ = create_service<std_srvs::srv::Trigger>(
+        "b210/discard", [this](const std::shared_ptr<std_srvs::srv::Trigger::Request>,
+                               std::shared_ptr<std_srvs::srv::Trigger::Response> res) {
+            const StartResult r = handle_discard();
+            res->success = r.accepted;
+            res->message = r.message;
+        });
     status_timer_ = create_wall_timer(std::chrono::milliseconds(500), [this] { publish_status(); });
 
     // Latched config: the file's text now, the run's text again at each start.
@@ -135,6 +161,10 @@ SarB210Node::SarB210Node(const rclcpp::NodeOptions& options, RadioFactory radio_
 SarB210Node::~SarB210Node() {
     stop_requested_ = true;
     join_worker();
+    if (held_) {
+        RCLCPP_ERROR(get_logger(), "shutting down with an unwritten run held in RAM (target '%s'): that data is lost",
+                     held_dir_.c_str());
+    }
 }
 
 void SarB210Node::join_worker() {
@@ -160,11 +190,7 @@ std::string SarB210Node::resolve_run_dir(bool transmit) const {
     localtime_r(&now, &tm);
     std::strftime(stamp, sizeof stamp, "%Y%m%d_%H%M%S", &tm);
     fs::path base = fs::path(run_root_) / (std::string("run_") + stamp + (transmit ? "_tx" : "_rx"));
-    fs::path dir = base;
-    for (int n = 2; fs::exists(dir); ++n) {
-        dir = base.string() + "_" + std::to_string(n);
-    }
-    return fs::absolute(dir).string();
+    return fs::absolute(unique_path(base)).string();
 }
 
 StartResult SarB210Node::handle_start(bool transmit, const std::string& confirm, double duration_s) {
@@ -206,6 +232,12 @@ StartResult SarB210Node::handle_start(bool transmit, const std::string& confirm,
     {
         std::lock_guard<std::mutex> lock(mu_);
         const uint8_t s = state_.load();
+        if (held_) {
+            out.message = "refused: the previous run's data is held in RAM because its run folder could not be written (" +
+                          fatal_error_ + "). Call b210/write_retry (optionally with a path) or b210/discard first.";
+            RCLCPP_WARN(get_logger(), "%s", out.message.c_str());
+            return out;
+        }
         if (s == StatusMsg::STATE_PREFLIGHT || s == StatusMsg::STATE_RUNNING || s == StatusMsg::STATE_WRITING) {
             out.message = std::string("a run is already in progress (state ") + state_name(s) + ")";
             return out;
@@ -347,12 +379,9 @@ void SarB210Node::worker_main(sar::RunConfig config, bool transmit, std::string 
             failure = "run ended early: " + *session->fatal_error();
         }
         if (!run_dir.empty()) {
-            try {
-                session->write_dataset(run_dir);
-                RCLCPP_INFO(get_logger(), "wrote %s", run_dir.c_str());
-            } catch (const std::exception& e) {
-                failure += (failure.empty() ? "" : "; ") + std::string("run folder not written: ") + e.what();
-            }
+            const std::string write_error = write_session(*session, run_dir, true);
+            settle_write(session, run_dir, failure, write_error);
+            return;
         }
     } catch (const std::exception& e) {
         failure = e.what();
@@ -361,15 +390,128 @@ void SarB210Node::worker_main(sar::RunConfig config, bool transmit, std::string 
     if (!failure.empty()) {
         RCLCPP_ERROR(get_logger(), "%s", failure.c_str());
     }
+    settle_write(session, run_dir, failure, "");
+}
+
+std::string SarB210Node::write_session(const sar::CaptureSession& session, std::string& dir, bool suffix_retry) {
+    std::string error;
+    try {
+        session.write_dataset(dir);
+        RCLCPP_INFO(get_logger(), "wrote %s", dir.c_str());
+        return "";
+    } catch (const std::exception& e) {
+        error = e.what();
+    }
+    std::error_code ec;
+    if (suffix_retry && fs::exists(dir, ec)) {
+        const std::string alt = unique_path(dir);
+        RCLCPP_WARN(get_logger(), "write to '%s' failed (%s); retrying once at '%s'", dir.c_str(), error.c_str(), alt.c_str());
+        try {
+            session.write_dataset(alt);
+            RCLCPP_INFO(get_logger(), "wrote %s", alt.c_str());
+            dir = alt;
+            return "";
+        } catch (const std::exception& e) {
+            error += std::string("; retry at '") + alt + "' failed: " + e.what();
+        }
+    }
+    return error;
+}
+
+void SarB210Node::settle_write(std::shared_ptr<sar::CaptureSession> session, const std::string& dir,
+                               const std::string& run_failure, const std::string& write_error) {
+    std::string failure = run_failure;
+    if (!write_error.empty()) {
+        failure += (failure.empty() ? "" : "; ") + std::string("run folder not written: ") + write_error;
+        RCLCPP_ERROR(get_logger(), "%s. The data is held in RAM: call b210/write_retry or b210/discard.", failure.c_str());
+    } else if (!failure.empty()) {
+        RCLCPP_ERROR(get_logger(), "%s", failure.c_str());
+    }
     {
         std::lock_guard<std::mutex> lock(mu_);
-        last_ = snapshot_locked();
+        if (!held_) {
+            last_ = snapshot_locked();  // (a retry keeps the snapshot taken when the run ended)
+        }
         fatal_error_ = failure;
-        session.reset();
+        if (!dir.empty() && write_error.empty()) {
+            run_dir_ = dir;
+        }
+        if (write_error.empty()) {
+            held_.reset();
+            held_dir_.clear();
+            held_run_failure_.clear();
+        } else {
+            held_ = std::move(session);  // never free a session whose data has not been written
+            held_dir_ = dir;
+            held_run_failure_ = run_failure;
+        }
         session_.reset();
         run_.reset();
     }
-    set_state(failure.empty() ? StatusMsg::STATE_DONE : StatusMsg::STATE_FAILED);
+    set_state(!write_error.empty() ? StatusMsg::STATE_WRITE_FAILED
+                                   : (failure.empty() ? StatusMsg::STATE_DONE : StatusMsg::STATE_FAILED));
+}
+
+StartResult SarB210Node::handle_write_retry(const std::string& path) {
+    StartResult out;
+    std::thread old;
+    {
+        std::lock_guard<std::mutex> lock(mu_);
+        if (state_.load() != StatusMsg::STATE_WRITE_FAILED || !held_) {
+            out.message = std::string("nothing to retry: no unwritten run is held (state ") + state_name(state_.load()) + ")";
+            return out;
+        }
+        out.run_dir = path.empty() ? fs::absolute(unique_path(held_dir_)).string() : fs::absolute(expand_home(path)).string();
+        old = std::move(worker_);
+        set_state(StatusMsg::STATE_WRITING);
+    }
+    if (old.joinable()) {
+        old.join();
+    }
+    {
+        std::lock_guard<std::mutex> lock(mu_);
+        run_dir_ = out.run_dir;
+        const std::string dir = out.run_dir;
+        worker_ = std::thread([this, dir] { retry_main(dir); });
+    }
+    out.accepted = true;
+    out.message = "writing the held run to '" + out.run_dir + "' in the background, watch b210/status";
+    RCLCPP_INFO(get_logger(), "%s", out.message.c_str());
+    return out;
+}
+
+void SarB210Node::retry_main(std::string dir) {
+    std::shared_ptr<sar::CaptureSession> session;
+    std::string run_failure;
+    {
+        std::lock_guard<std::mutex> lock(mu_);
+        session = held_;
+        run_failure = held_run_failure_;
+    }
+    const std::string write_error = write_session(*session, dir, false);
+    settle_write(std::move(session), dir, run_failure, write_error);
+}
+
+StartResult SarB210Node::handle_discard() {
+    StartResult out;
+    std::shared_ptr<sar::CaptureSession> freed;
+    {
+        std::lock_guard<std::mutex> lock(mu_);
+        if (state_.load() != StatusMsg::STATE_WRITE_FAILED || !held_) {
+            out.message = std::string("nothing to discard: no unwritten run is held (state ") + state_name(state_.load()) + ")";
+            return out;
+        }
+        fatal_error_ += "; unwritten data discarded by operator";
+        freed = std::move(held_);
+        held_dir_.clear();
+        held_run_failure_.clear();
+        set_state(StatusMsg::STATE_FAILED);
+    }
+    freed.reset();
+    out.accepted = true;
+    out.message = "held run data discarded";
+    RCLCPP_WARN(get_logger(), "%s", out.message.c_str());
+    return out;
 }
 
 void SarB210Node::publisher_main(Run* run) {

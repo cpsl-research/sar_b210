@@ -7,13 +7,14 @@ uint8 STATE_RUNNING=2
 uint8 STATE_WRITING=3     # run ended, writing the run folder
 uint8 STATE_DONE=4
 uint8 STATE_FAILED=5
+uint8 STATE_WRITE_FAILED=6  # run captured but the run folder could not be written; the data is held in RAM (b210/write_retry or b210/discard)
 uint8 state
 string state_name
 
 bool transmit             # the current or last run radiates
 string config_path
 string run_dir            # run folder written at the end ('' until a run is set up, or if write_run_folder is false)
-string fatal_error        # why the last run failed or ended early ('' if none)
+string fatal_error        # why the last run failed, ended early or could not be written ('' if none)
 
 uint64 bursts
 uint64 invalid_bursts

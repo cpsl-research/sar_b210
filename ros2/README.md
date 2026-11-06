@@ -18,6 +18,14 @@ Build (the capture library is built in as a subproject; `capture/COLCON_IGNORE` 
 | `b210/config` | `std_msgs/String` | latched; the run config text |
 | `b210/start` | `Start` | `transmit`, `confirm`, `duration_s` (0 = config `max_run_s`) |
 | `b210/stop` | `std_srvs/Trigger` | |
+| `b210/write_retry` | `WriteRetry` | after a failed run-folder write: `path` ('' = fresh unique path), written in the background |
+| `b210/discard` | `std_srvs/Trigger` | drop the held, unwritten run data |
+
+Write failures never lose data. If the run folder exists the node retries once at `<dir>_2`
+(`_3`, ...). Any other failure (disk short, unwritable) leaves state `write_failed` (`SarStatus.fatal_error`
+has the error): the finished session stays in RAM, `b210/start` is refused with that reason, and the
+operator calls `b210/write_retry` (optionally with a path) or `b210/discard`. The session still holds
+the radio open meanwhile. Data is lost only if the node exits while held (logged).
 
 Params: `config_path`, `run_root`, `write_run_folder` (true), `publish_iq` (true),
 `publish_queue_depth` (192 bursts, about 2.9 s at the measured 65 bursts/s of 224 KB, 43 MB).
