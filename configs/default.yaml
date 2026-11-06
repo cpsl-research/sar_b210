@@ -1,0 +1,56 @@
+# Run configuration. Copied verbatim into every dataset as config.yaml.
+# Tags: [start] tunable default | [measure] must be measured on hardware before relying on it
+#       [owner] open question, needs an owner answer | [fixed] owner decision, ask before changing
+# Plain decimals on purpose: PyYAML reads 56e6 as a string.
+
+device:
+  args: "type=b200,num_recv_frames=512,recv_frame_size=8200"  # [start]
+  master_clock_rate_hz: 56000000                              # [start]
+  rx_timestamp_offset_ticks: 7                                # [measure] first sample tick minus commanded tick; 7 on the B210 at 56 MS/s
+
+waveform:
+  sample_rate_hz: 56000000     # [start]
+  num_steps: 2                 # [fixed] the most that fits 83.5 MHz with useful bandwidth per step
+  step_spacing_hz: 30000000    # [start] 15 MHz overlap between adjacent chirps
+  chirp_bandwidth_hz: 45000000 # [start] total occupied 75 MHz
+  chirp_length_s: 0.00002      # [start] 1120 samples at 56 MS/s
+  dwell_s: 0.001               # [start] 50 chirps
+  taper_fraction: 0.05         # [start] raised-cosine taper, as a fraction of the chirp at each edge
+  tx_amplitude: 0.7            # [start] digital scale, fraction of full scale
+
+rf:
+  center_freq_hz: 2441750000   # [fixed] middle of the ISM band; lambda = 12.3 cm
+  lo_offset_hz: 0              # [owner] see docs/design_notes.md
+  tx_gain_db: 20               # [measure] raise until leakage is strong, peak < 50% of full scale, never above the EIRP cap (about 0.3 dBm conducted during a burst)
+  max_tx_gain_db: 40           # [measure] capture refuses a higher tx_gain_db; raise only after measuring conducted power
+  rx_gain_db: 30               # [measure] fixed for every step and run; no AGC
+  tx_antenna: "TX/RX"          # [fixed] channel A
+  rx_antenna: "RX2"            # [fixed] channel A
+  tx_mode: "timed_burst"       # only mode supported; keeps average power down
+
+# Capture must refuse to transmit while these are null, the sweep falls outside them, or antenna gain is null.
+permitted_band:
+  min_hz: 2400000000           # [fixed]
+  max_hz: 2483500000           # [fixed]
+  legal_basis: "FCC Part 15 15.249 (home-built, 15.23)"  # [fixed] see docs/design_notes.md
+  max_avg_eirp_dbm: -1.25      # 50 mV/m at 3 m; average, not yet verified on hardware
+
+timing:
+  retune_s: 0.0092             # [measure] tune, lock and command overhead per step; 9.2 ms in a 20 s run on the B210
+  settle_margin_s: 0.008       # [measure] wait after LO lock; set from leakage phase stability at stage 2
+  command_lead_s: 0.002        # [measure] how far ahead of a burst its timed commands are issued
+  lock_timeout_s: 0.1          # [start]
+  clock_sync_interval_s: 1     # [start] how often USRP time is logged against host clocks
+  max_run_s: 60                # [start] sizes the RAM buffer, plus 25%; 20 m at 0.5 m/s is 40 s
+  sync_mode: "host_clock"      # [owner] pps | host_clock; depends on the autonomy stack time base
+
+antenna:
+  type: "UWB PCB horn"         # [fixed]
+  gain_dbi: 8                  # [fixed] owner value at 2.4 GHz; used for the EIRP check
+  beamwidth_deg: 60            # [fixed] owner value at 2.4 GHz; sets the along-track spacing rule
+
+platform:
+  planned_speed_mps: 0.5       # [start] limit is about 2.3 m/s (lambda/3) with an 18 ms sweep; slower adds integration
+
+output:
+  dataset_root: null           # USB SSD mount point, set per machine

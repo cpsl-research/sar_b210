@@ -1,0 +1,68 @@
+[
+{
+  "directory": "/home/samuel-rivera/Development/b210_sar/build",
+  "command": "/usr/bin/c++ -DBOOST_SYSTEM_DYN_LINK -DBOOST_SYSTEM_NO_LIB -I/home/samuel-rivera/Development/b210_sar/capture/include -O3 -DNDEBUG -std=c++17 -Wall -Wextra -o CMakeFiles/sar_capture_core.dir/capture/src/budget.cpp.o -c /home/samuel-rivera/Development/b210_sar/capture/src/budget.cpp",
+  "file": "/home/samuel-rivera/Development/b210_sar/capture/src/budget.cpp",
+  "output": "CMakeFiles/sar_capture_core.dir/capture/src/budget.cpp.o"
+},
+{
+  "directory": "/home/samuel-rivera/Development/b210_sar/build",
+  "command": "/usr/bin/c++ -DBOOST_SYSTEM_DYN_LINK -DBOOST_SYSTEM_NO_LIB -I/home/samuel-rivera/Development/b210_sar/capture/include -O3 -DNDEBUG -std=c++17 -Wall -Wextra -o CMakeFiles/sar_capture_core.dir/capture/src/capture_session.cpp.o -c /home/samuel-rivera/Development/b210_sar/capture/src/capture_session.cpp",
+  "file": "/home/samuel-rivera/Development/b210_sar/capture/src/capture_session.cpp",
+  "output": "CMakeFiles/sar_capture_core.dir/capture/src/capture_session.cpp.o"
+},
+{
+  "directory": "/home/samuel-rivera/Development/b210_sar/build",
+  "command": "/usr/bin/c++ -DBOOST_SYSTEM_DYN_LINK -DBOOST_SYSTEM_NO_LIB -I/home/samuel-rivera/Development/b210_sar/capture/include -O3 -DNDEBUG -std=c++17 -Wall -Wextra -o CMakeFiles/sar_capture_core.dir/capture/src/chirp.cpp.o -c /home/samuel-rivera/Development/b210_sar/capture/src/chirp.cpp",
+  "file": "/home/samuel-rivera/Development/b210_sar/capture/src/chirp.cpp",
+  "output": "CMakeFiles/sar_capture_core.dir/capture/src/chirp.cpp.o"
+},
+{
+  "directory": "/home/samuel-rivera/Development/b210_sar/build",
+  "command": "/usr/bin/c++ -DBOOST_SYSTEM_DYN_LINK -DBOOST_SYSTEM_NO_LIB -I/home/samuel-rivera/Development/b210_sar/capture/include -O3 -DNDEBUG -std=c++17 -Wall -Wextra -o CMakeFiles/sar_capture_core.dir/capture/src/dataset_writer.cpp.o -c /home/samuel-rivera/Development/b210_sar/capture/src/dataset_writer.cpp",
+  "file": "/home/samuel-rivera/Development/b210_sar/capture/src/dataset_writer.cpp",
+  "output": "CMakeFiles/sar_capture_core.dir/capture/src/dataset_writer.cpp.o"
+},
+{
+  "directory": "/home/samuel-rivera/Development/b210_sar/build",
+  "command": "/usr/bin/c++ -DBOOST_SYSTEM_DYN_LINK -DBOOST_SYSTEM_NO_LIB -I/home/samuel-rivera/Development/b210_sar/capture/include -O3 -DNDEBUG -std=c++17 -Wall -Wextra -o CMakeFiles/sar_capture_core.dir/capture/src/ram_buffer.cpp.o -c /home/samuel-rivera/Development/b210_sar/capture/src/ram_buffer.cpp",
+  "file": "/home/samuel-rivera/Development/b210_sar/capture/src/ram_buffer.cpp",
+  "output": "CMakeFiles/sar_capture_core.dir/capture/src/ram_buffer.cpp.o"
+},
+{
+  "directory": "/home/samuel-rivera/Development/b210_sar/build",
+  "command": "/usr/bin/c++ -DBOOST_SYSTEM_DYN_LINK -DBOOST_SYSTEM_NO_LIB -I/home/samuel-rivera/Development/b210_sar/capture/include -O3 -DNDEBUG -std=c++17 -Wall -Wextra -o CMakeFiles/sar_capture_core.dir/capture/src/run_config.cpp.o -c /home/samuel-rivera/Development/b210_sar/capture/src/run_config.cpp",
+  "file": "/home/samuel-rivera/Development/b210_sar/capture/src/run_config.cpp",
+  "output": "CMakeFiles/sar_capture_core.dir/capture/src/run_config.cpp.o"
+},
+{
+  "directory": "/home/samuel-rivera/Development/b210_sar/build",
+  "command": "/usr/bin/c++ -DBOOST_SYSTEM_DYN_LINK -DBOOST_SYSTEM_NO_LIB -I/home/samuel-rivera/Development/b210_sar/capture/include -O3 -DNDEBUG -std=c++17 -Wall -Wextra -o CMakeFiles/sar_capture_core.dir/capture/src/sha256.cpp.o -c /home/samuel-rivera/Development/b210_sar/capture/src/sha256.cpp",
+  "file": "/home/samuel-rivera/Development/b210_sar/capture/src/sha256.cpp",
+  "output": "CMakeFiles/sar_capture_core.dir/capture/src/sha256.cpp.o"
+},
+{
+  "directory": "/home/samuel-rivera/Development/b210_sar/build",
+  "command": "/usr/bin/c++ -DBOOST_SYSTEM_DYN_LINK -DBOOST_SYSTEM_NO_LIB -I/home/samuel-rivera/Development/b210_sar/capture/include -O3 -DNDEBUG -std=c++17 -Wall -Wextra -o CMakeFiles/sar_capture_core.dir/capture/src/uhd_radio.cpp.o -c /home/samuel-rivera/Development/b210_sar/capture/src/uhd_radio.cpp",
+  "file": "/home/samuel-rivera/Development/b210_sar/capture/src/uhd_radio.cpp",
+  "output": "CMakeFiles/sar_capture_core.dir/capture/src/uhd_radio.cpp.o"
+},
+{
+  "directory": "/home/samuel-rivera/Development/b210_sar/build",
+  "command": "/usr/bin/c++ -DBOOST_SYSTEM_DYN_LINK -DBOOST_SYSTEM_NO_LIB -I/home/samuel-rivera/Development/b210_sar/capture/include -O3 -DNDEBUG -std=c++17 -Wall -Wextra -o CMakeFiles/sar_capture.dir/capture/apps/sar_capture.cpp.o -c /home/samuel-rivera/Development/b210_sar/capture/apps/sar_capture.cpp",
+  "file": "/home/samuel-rivera/Development/b210_sar/capture/apps/sar_capture.cpp",
+  "output": "CMakeFiles/sar_capture.dir/capture/apps/sar_capture.cpp.o"
+},
+{
+  "directory": "/home/samuel-rivera/Development/b210_sar/build",
+  "command": "/usr/bin/c++ -DBOOST_SYSTEM_DYN_LINK -DBOOST_SYSTEM_NO_LIB -I/home/samuel-rivera/Development/b210_sar/capture/include -O3 -DNDEBUG -std=c++17 -Wall -Wextra -o CMakeFiles/sar_bench_probe.dir/capture/apps/sar_bench_probe.cpp.o -c /home/samuel-rivera/Development/b210_sar/capture/apps/sar_bench_probe.cpp",
+  "file": "/home/samuel-rivera/Development/b210_sar/capture/apps/sar_bench_probe.cpp",
+  "output": "CMakeFiles/sar_bench_probe.dir/capture/apps/sar_bench_probe.cpp.o"
+},
+{
+  "directory": "/home/samuel-rivera/Development/b210_sar/build",
+  "command": "/usr/bin/c++ -DBOOST_SYSTEM_DYN_LINK -DBOOST_SYSTEM_NO_LIB -DSAR_SOURCE_DIR=\\\"/home/samuel-rivera/Development/b210_sar\\\" -I/home/samuel-rivera/Development/b210_sar/capture/include -O3 -DNDEBUG -std=c++17 -Wall -Wextra -o CMakeFiles/sar_capture_tests.dir/capture/tests/capture_tests.cpp.o -c /home/samuel-rivera/Development/b210_sar/capture/tests/capture_tests.cpp",
+  "file": "/home/samuel-rivera/Development/b210_sar/capture/tests/capture_tests.cpp",
+  "output": "CMakeFiles/sar_capture_tests.dir/capture/tests/capture_tests.cpp.o"
+}
+]
