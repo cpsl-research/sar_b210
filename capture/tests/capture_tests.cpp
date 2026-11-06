@@ -365,7 +365,11 @@ void test_ram_buffer_starts_zeroed() {
 // ----- capture session -----
 
 void test_clean_run_steps_and_times() {
-    const RunConfig c = fast_config();
+    RunConfig c = fast_config();
+    // The fake radio returns bursts without pacing, so the RAM buffer (sized from the nominal step
+    // time) fills in ~20 ms of real time, well short of max_run_s. Sync faster than that so the
+    // periodic path is exercised: rows = start + periodic + end.
+    c.timing.clock_sync_interval_s = 0.002;
     Run run = run_to_end(c);
     const auto& bursts = run.session->bursts();
     CHECK(!run.session->fatal_error());
