@@ -1,0 +1,8 @@
+# Start a capture run. RX-only unless transmit is true AND confirm == "TRANSMIT".
+bool transmit
+string confirm
+float64 duration_s        # > 0 overrides timing.max_run_s for this run; 0 = the config's value
+---
+bool accepted
+string message            # why it was refused, or what started
+string run_dir            # where the run folder will be written ('' if not written)
