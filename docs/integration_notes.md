@@ -30,7 +30,14 @@ near full gain the RX port's limit of about -15 dBm could be exceeded. The cap o
 
 ## Host setup
 
-`scripts/check_host.sh` reports most of these without changing anything.
+`python3 tools/setup/host_setup.py` reports these without changing anything (`--json` for machines;
+`scripts/check_host.sh` adds the USB topology). To set a machine up, run
+`sudo python3 tools/setup/host_setup.py --apply`: it prints each fix before running it, asks once per
+check (`--yes` to skip), and does nothing when the host already complies. `--scope deps` (apt UHD packages
+and the B2xx images in `/usr/share/uhd/images`) is all a container needs; `--scope host` is the udev
+rule `61-b210-power.rules`, `limits.d/90-b210.conf` (memlock unlimited, rtprio 99 for the invoking
+user's group; re-login) and USB autosuspend, which only a real host can set. Governor, AC power, USB speed
+and the current session's limits are report-only warnings.
 
 - **`UHD_IMAGES_DIR`:** not needed with apt UHD, which finds its images in `/usr/share/uhd/images`. Set it
   only for a non-default images directory (for example one filled by `uhd_images_downloader`); without
@@ -40,7 +47,7 @@ near full gain the RX port's limit of about -15 dBm could be exceeded. The cap o
 - **Power and USB:** use the performance CPU governor, disable USB autosuspend, and run on AC power.
   Autosuspend can be off globally (`/sys/module/usbcore/parameters/autosuspend` = -1) or per device
   (`power/control` = `on` on the Ettus device, 2500:002x, for example by a udev rule);
-  `scripts/check_host.sh` accepts either. The original bench host had none of these set.
+  the doctor accepts either. The original bench host had none of these set.
 - **USB:** keep the B210 on its own USB 3 controller with no hub. It enumerated at 5 Gb/s on bus 4 here.
 - **Storage:** write datasets to the USB SSD. `/home` has about 2.5 GB free. A 60 s run is about 0.74 GB,
   and `write_dataset` refuses to start if space is short.
