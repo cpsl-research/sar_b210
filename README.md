@@ -62,7 +62,8 @@ against `CLOCK_MONOTONIC` and `CLOCK_REALTIME`. Each burst lasts `num_samples / 
       dataset, positions      Run folder I/O, per-burst antenna positions from the autonomy stack
       processing/             Pulse, calibration, backprojection, autofocus, pipeline
       sim                     Synthetic runs for testing processing without hardware
-    scripts/check_host.sh     Read-only check of host readiness
+    tools/setup/host_setup.py Host doctor and installer: apt UHD, B2xx images, udev, limits, autosuspend
+    scripts/check_host.sh     Read-only wrapper: the doctor plus the USB topology
     docs/                     Spec, design notes, field runbook
     tests/
 
