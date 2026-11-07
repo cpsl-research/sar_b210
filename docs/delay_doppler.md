@@ -55,7 +55,7 @@ band-limited interpolation, no upsampling). It equals $a_Le^{j\phi_{m,k}}e^{-j2\
 - **$\tau_{env}$ is fitted once per run** (`fit_leakage_cal`) on static bursts: maximise
   $\sum_m|y_m(\tau)|^2$, on an 8× zero-padded grid, then golden-section to $10^{-6}$ sample. Only
   magnitudes enter, so $\phi$ needs no prior removal; the leakage must be the strongest return in
-  the search window. Sim error: 0.0014 samples.
+  the search window.
 - **It must be fractional.** An error $\delta$ puts a phase jump $2\pi\Delta f\delta$ at the
   junction; rounding to 160 samples raises PSL by 12.6 dB (Appendix A.1, test B6).
 - **Sign of the $\tau_L$ term (resolved in Step 3).** Dividing by $c$ leaves
@@ -133,8 +133,7 @@ the CPI's valid bursts. Since $Z_{m,k}\propto e^{-j2\pi\nu\tau_i(\bar t)}e^{+j2\
 the matching $f_D$ cancels the second factor in every step, up to the $\nu/f_c$ scaling (±1.5 %).
 Each $D_k$ then carries the phase of a static target at $\tau_i(\bar t)$, and each $f_D$ row is
 stitched as in §4 with no further correction. The per-burst $t_{m,k}$ is the step compensation: it
-removes $2\pi f_DkT_{step}$ exactly. Loss stays under 0.2 dB up to $v_{amb}$, for
-$64^2\times2\times1120\approx9$ M complex MACs per map.
+removes $2\pi f_DkT_{step}$ exactly. Loss stays under 0.2 dB up to $v_{amb}$.
 
 What is ignored:
 
@@ -144,8 +143,7 @@ What is ignored:
   negligible while $M\le\Delta R/(2|v|\bar T_s)$: 32 at 1 m/s, 65 at 0.5 m/s. See
   [`wehner1995`, ch. 5] for stepped-frequency velocity effects.
 - **Zero Doppler.** Leakage and static clutter sit at $f_D=0$. `remove_static=True`
-  (`remove_static_clutter`) subtracts each step's mean $Z$ over the CPI before the Doppler DFT; a
-  display toggle, off by default.
+  (`remove_static_clutter`) subtracts each step's mean $Z$ over the CPI before the Doppler DFT; off by default.
 
 Other configurations ($N\neq2$): Appendix A.2. Tests: Appendix B.
 
