@@ -29,6 +29,7 @@ target_link_libraries(sar_b210_node PRIVATE sar_b210_node_lib)
 install(TARGETS sar_b210_node DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch DESTINATION share/${PROJECT_NAME}/)
+# Includes hw_limits.yaml: the capture library finds it next to the config file (find_hw_limits_path).
 install(DIRECTORY ../../configs/ DESTINATION share/${PROJECT_NAME}/config FILES_MATCHING PATTERN "*.yaml")
 
 if(BUILD_TESTING)

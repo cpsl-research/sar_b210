@@ -293,3 +293,43 @@ def test_cli_list_show_and_missing():
     assert _cli("--show", "default").stdout == DEFAULT.read_text()
     assert _cli("--check", "nonexistent").returncode == 2
     assert "valid" in _cli("--check", "default").stdout
+
+
+# ---------------------------------------------------------------------------------------------
+# Python/C++ parity: tests/fixtures/config_parity.yaml is the shared table (capture_tests.cpp reads the same file)
+
+PARITY = yaml.safe_load((ROOT / "tests/fixtures/config_parity.yaml").read_text())["cases"]
+
+
+def _patched(case):
+    r = raw()
+    for dotted, value in case["set"].items():
+        sec, key = dotted.split(".", 1)
+        r[sec][key] = value
+    return r
+
+
+@pytest.mark.parametrize("case", PARITY, ids=[c["name"] for c in PARITY])
+def test_parity_table_python(case):
+    rep = cfgmod.validate(_patched(case))
+    for got, want, kind in ((rep.errors, case.get("errors", []), "error"), (rep.warnings, case.get("warnings", []), "warning")):
+        assert {i.field for i in got} == {w["field"] for w in want}, (kind, [str(i) for i in got])
+        for w in want:
+            assert any(i.field == w["field"] and w["text"] in i.message for i in got), (w, [str(i) for i in got])
+    assert rep.valid == (not case.get("errors"))
+
+
+def test_parity_table_cli_exit_codes(tmp_path):
+    """The built binary's --check rejects exactly the table's invalid cases (the C++ unit test checks the wording)."""
+    if SAR_CAPTURE is None:
+        pytest.skip("sar_capture not built")
+    if Path(SAR_CAPTURE).stat().st_mtime < (ROOT / "capture/src/run_config.cpp").stat().st_mtime:
+        pytest.skip("sar_capture is older than capture/src/run_config.cpp (built before the hw_limits check)")
+    for case in PARITY:
+        p = tmp_path / f"{case['name']}.yaml"
+        p.write_text(yaml.safe_dump(_patched(case), sort_keys=False))
+        res = subprocess.run([str(SAR_CAPTURE), "--check", str(p)], capture_output=True, text=True,
+                             env={**os.environ, "B210_SAR_CONFIG_DIR": str(ROOT / "configs")})
+        assert (res.returncode == 0) == (not case.get("errors")), (case["name"], res.stderr)
+        for w in case.get("errors", []):
+            assert f"{w['field']}: " in res.stderr and w["text"] in res.stderr, (case["name"], res.stderr)

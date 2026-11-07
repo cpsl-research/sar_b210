@@ -24,6 +24,8 @@
 #include "sar/run_config.hpp"
 #include "sar/sha256.hpp"
 
+#include <yaml-cpp/yaml.h>
+
 namespace fs = std::filesystem;
 using namespace sar;
 
@@ -267,6 +269,106 @@ void test_validation_blocks_unsafe_configs() {
     c = default_config();
     c.platform.planned_speed_mps = 5;
     CHECK(!validate_config(c).warnings.empty());
+}
+
+// ----- hardware limits (configs/hw_limits.yaml) and Python parity -----
+
+// tests/fixtures/config_parity.yaml is the table tests/test_config_library.py checks too: same configs, same
+// error/warning fields, same wording fragments.
+void test_parity_table_matches_python() {
+    const YAML::Node table = YAML::LoadFile(std::string(SAR_SOURCE_DIR) + "/tests/fixtures/config_parity.yaml");
+    const YAML::Node base = YAML::Load(default_config().source_text);
+    std::size_t cases = 0;
+    for (const auto& item : table["cases"]) {
+        ++cases;
+        const std::string name = item["name"].as<std::string>();
+        YAML::Node patched = YAML::Clone(base);
+        for (const auto& entry : item["set"]) {
+            const std::string dotted = entry.first.as<std::string>();
+            const auto dot = dotted.find('.');
+            patched[dotted.substr(0, dot)][dotted.substr(dot + 1)] = entry.second;
+        }
+        YAML::Emitter out;
+        out << patched;
+        const ConfigReport report = validate_config(parse_run_config(out.c_str()));
+        for (const std::string severity : {"error", "warning"}) {
+            std::set<std::string> got_fields;
+            std::vector<const ConfigIssue*> got;
+            for (const auto& issue : report.issues) {
+                if (issue.severity == severity) {
+                    got_fields.insert(issue.field);
+                    got.push_back(&issue);
+                }
+            }
+            std::set<std::string> want_fields;
+            const YAML::Node wanted = item[severity + "s"];
+            for (const auto& w : wanted) {
+                const std::string field = w["field"].as<std::string>();
+                const std::string text = w["text"].as<std::string>();
+                want_fields.insert(field);
+                bool found = false;
+                for (const ConfigIssue* issue : got) {
+                    found = found || (issue->field == field && issue->message.find(text) != std::string::npos);
+                }
+                if (!found) {
+                    std::cerr << "  " << name << ": no " << severity << " '" << field << ": " << text << "'\n";
+                }
+                CHECK(found);
+            }
+            if (got_fields != want_fields) {
+                std::cerr << "  " << name << ": " << severity << " fields differ from the table; got:\n";
+                for (const ConfigIssue* issue : got) {
+                    std::cerr << "    " << issue->field << ": " << issue->message << '\n';
+                }
+            }
+            CHECK(got_fields == want_fields);
+        }
+        // errors/warnings strings are the structured issues as "field: message"; only errors reject
+        CHECK(report.errors.empty() == !item["errors"].IsDefined());
+        for (const auto& issue : report.issues) {
+            const auto& list = issue.severity == "error" ? report.errors : report.warnings;
+            CHECK(std::find(list.begin(), list.end(), issue.field + ": " + issue.message) != list.end());
+        }
+    }
+    CHECK(cases >= 20);
+}
+
+void test_hw_limits_found_next_to_config_and_loaded() {
+    const std::string path = find_hw_limits_path(std::string(SAR_SOURCE_DIR) + "/configs/default.yaml");
+    CHECK(!path.empty());
+    const HwLimits limits = load_hw_limits(path);
+    CHECK(limits.find("rf.tx_gain_db") != nullptr);
+    CHECK(limits.find("rf.tx_gain_db")->max.value_or(0) == 89.8);
+    CHECK(limits.find("rf.tx_antenna") != nullptr && limits.find("rf.tx_antenna")->allowed.size() == 1);
+    CHECK(limits.find("no.such.row") == nullptr);
+    // user configs live in configs/user/: the parent directory is searched too
+    CHECK(!find_hw_limits_path(std::string(SAR_SOURCE_DIR) + "/configs/user/mine.yaml").empty());
+    CHECK(throws([] { load_hw_limits("/nonexistent/hw_limits.yaml"); }, "hw_limits"));
+}
+
+void test_usb_rows_are_not_evaluated_offline() {
+    const ConfigReport report = validate_config(default_config());
+    CHECK(report.not_checked.size() == 2);
+    // 56 MS/s is far above the USB 2 row; offline validation must not warn or reject for it
+    CHECK(report.errors.empty() && report.warnings.empty());
+}
+
+void test_missing_limits_table_refuses() {
+    RunConfig c = default_config();
+    HwLimits empty;
+    empty.path = "empty";
+    const ConfigReport report = validate_config(c, empty);
+    CHECK(!report.errors.empty());  // a missing row is an error, never a silent pass
+    // and a config loaded from a place with no table nearby still finds the build-time default or says so
+    CHECK(validate_config(c).errors.empty());
+}
+
+void test_warning_rows_do_not_reject() {
+    RunConfig c = default_config();
+    c.timing.retune_s = 0.005;  // library row, severity warning
+    const ConfigReport report = validate_config(c);
+    CHECK(report.errors.empty());
+    CHECK(!report.warnings.empty());
 }
 
 void test_session_refuses_invalid_config() {
@@ -777,6 +879,11 @@ int main() {
         T(test_default_config_is_valid),
         T(test_parser_rejects_bad_files),
         T(test_validation_blocks_unsafe_configs),
+        T(test_parity_table_matches_python),
+        T(test_hw_limits_found_next_to_config_and_loaded),
+        T(test_usb_rows_are_not_evaluated_offline),
+        T(test_missing_limits_table_refuses),
+        T(test_warning_rows_do_not_reject),
         T(test_session_refuses_invalid_config),
         T(test_budget_values),
         T(test_chirp_sweeps_the_configured_band),

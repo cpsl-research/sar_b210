@@ -44,6 +44,8 @@ add_library(sar::capture ALIAS sar_capture_core)
 target_include_directories(sar_capture_core PUBLIC include ${UHD_INCLUDE_DIRS})
 target_link_libraries(sar_capture_core PUBLIC ${UHD_LIBRARIES} Boost::system yaml-cpp::yaml-cpp Threads::Threads)
 target_compile_options(sar_capture_core PRIVATE -Wall -Wextra)
+# Last-resort place to find hw_limits.yaml (see find_hw_limits_path): the repo's configs/ dir.
+target_compile_definitions(sar_capture_core PRIVATE SAR_DEFAULT_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../configs")
 
 if(SAR_BUILD_APPS)
   add_executable(sar_capture apps/sar_capture.cpp)

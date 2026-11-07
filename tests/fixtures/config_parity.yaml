@@ -1,0 +1,95 @@
+# Shared table for the Python/C++ validator parity tests (tests/test_config_library.py, capture/tests/capture_tests.cpp).
+# Each case patches configs/default.yaml (dotted key -> value) and states what BOTH validators must say:
+#   errors / warnings: {field, text}, where field is the dotted config field and text a fragment of the message.
+# The lists are exact in their fields (as a set) and per-entry in the fragment, so the field and limit wording stay in step.
+# Neither validator transmits or opens a radio; this is offline validation only.
+cases:
+  - name: default_valid
+    set: {}
+  - name: freq_below_tune_range
+    set: {rf.center_freq_hz: 60000000, permitted_band.min_hz: 1000000, permitted_band.max_hz: 7000000000}
+    errors:
+      - {field: rf.center_freq_hz, text: "step 0 centre 45 MHz is below the rf.center_freq_hz.rx_tune minimum 50 MHz (uhd limit)"}
+  - name: freq_above_tune_range
+    set: {rf.center_freq_hz: 6100000000, permitted_band.min_hz: 1000000, permitted_band.max_hz: 7000000000}
+    errors:
+      - {field: rf.center_freq_hz, text: "step 0 centre 6085 MHz is above the rf.center_freq_hz.rx_tune maximum 6000 MHz (uhd limit)"}
+  - name: tx_gain_above_hardware
+    set: {rf.tx_gain_db: 95, rf.max_tx_gain_db: 95}
+    errors:
+      - {field: rf.tx_gain_db, text: "rf.tx_gain_db 95 dB is above the rf.tx_gain_db maximum 89.8 dB (uhd limit)"}
+      - {field: rf.max_tx_gain_db, text: "rf.max_tx_gain_db 95 dB is above the rf.tx_gain_db maximum 89.8 dB (uhd limit)"}
+  - name: rx_gain_above_hardware
+    set: {rf.rx_gain_db: 80}
+    errors:
+      - {field: rf.rx_gain_db, text: "rf.rx_gain_db 80 dB is above the rf.rx_gain_db maximum 76 dB (uhd limit)"}
+  - name: negative_gain
+    set: {rf.rx_gain_db: -1}
+    errors:
+      - {field: rf.rx_gain_db, text: "below the rf.rx_gain_db minimum 0 dB (uhd limit)"}
+  - name: higher_cap_inside_hardware_accepted
+    set: {rf.max_tx_gain_db: 60}
+  - name: different_band_and_cap_accepted
+    set: {permitted_band.min_hz: 2300000000, permitted_band.max_hz: 2600000000, rf.max_tx_gain_db: 50, rf.tx_gain_db: 45}
+  - name: tx_gain_above_own_cap
+    set: {rf.tx_gain_db: 50}
+    errors:
+      - {field: rf.tx_gain_db, text: "rf.tx_gain_db 50 dB is above this config's rf.max_tx_gain_db 40 dB"}
+  - name: sweep_outside_own_band
+    set: {rf.center_freq_hz: 2450000000}
+    errors:
+      - {field: waveform, text: "outside permitted_band 2400.00-2483.50 MHz"}
+  - name: sample_rate_and_clock_above_chip
+    set: {device.master_clock_rate_hz: 128000000, waveform.sample_rate_hz: 64000000}
+    errors:
+      - {field: device.master_clock_rate_hz, text: "device.master_clock_rate_hz 128 MHz is above the device.master_clock_rate_hz.range_1ch maximum 61.44 MHz (uhd limit)"}
+      - {field: waveform.sample_rate_hz, text: "waveform.sample_rate_hz 64 MHz is above the waveform.sample_rate_hz.range_1ch maximum 61.44 MHz (chip limit)"}
+    warnings:
+      - {field: device.master_clock_rate_hz, text: "device.master_clock_rate_hz.recommended_max maximum 56 MHz (uhd limit)"}
+      - {field: waveform.sample_rate_hz, text: "exceeds the 56 MHz analog bandwidth"}
+  - name: chirp_bandwidth_above_analog_filter
+    set: {waveform.chirp_bandwidth_hz: 60000000, permitted_band.min_hz: 2300000000, permitted_band.max_hz: 2600000000}
+    errors:
+      - {field: waveform.chirp_bandwidth_hz, text: "waveform.chirp_bandwidth_hz 60 MHz is above the rf.analog_bandwidth_hz maximum 56 MHz (uhd limit)"}
+      - {field: rf.lo_offset_hz, text: "chirp plus LO offset does not fit in the sample rate"}
+  - name: tx_antenna_not_a_tx_port
+    set: {rf.tx_antenna: "RX2"}
+    errors:
+      - {field: rf.tx_antenna, text: "'RX2' is not a valid port; allowed (rf.tx_antenna): TX/RX"}
+  - name: rx_antenna_tx_rx_accepted
+    set: {rf.rx_antenna: "TX/RX"}
+  - name: retune_below_measured_is_a_warning
+    set: {timing.retune_s: 0.005}
+    warnings:
+      - {field: timing.retune_s, text: "timing.retune_s 5 ms is below the timing.retune_s minimum 6.9 ms (library limit)"}
+  - name: master_clock_not_multiple
+    set: {device.master_clock_rate_hz: 60000000}
+    warnings:
+      - {field: device.master_clock_rate_hz, text: "above the device.master_clock_rate_hz.recommended_max maximum 56 MHz"}
+    errors:
+      - {field: waveform.sample_rate_hz, text: "master clock must be a whole multiple of the sample rate"}
+  - name: master_clock_above_recommended_is_a_warning
+    set: {device.master_clock_rate_hz: 61440000, waveform.sample_rate_hz: 30720000, waveform.chirp_length_s: 0.000025,
+          waveform.chirp_bandwidth_hz: 25000000, waveform.step_spacing_hz: 20000000}
+    warnings:
+      - {field: device.master_clock_rate_hz, text: "device.master_clock_rate_hz 61.44 MHz is above the device.master_clock_rate_hz.recommended_max maximum 56 MHz (uhd limit)"}
+  - name: continuous_tx_refused
+    set: {rf.tx_mode: "continuous_loop"}
+    errors:
+      - {field: rf.tx_mode, text: "rf.tx_mode must be timed_burst"}
+  - name: band_incomplete
+    set: {permitted_band.legal_basis: null}
+    errors:
+      - {field: permitted_band, text: "permitted_band is incomplete"}
+  - name: no_antenna_gain
+    set: {antenna.gain_dbi: null}
+    errors:
+      - {field: antenna.gain_dbi, text: "antenna.gain_dbi is needed"}
+  - name: dwell_not_whole_chirps
+    set: {waveform.dwell_s: 0.001001}
+    errors:
+      - {field: waveform.dwell_s, text: "dwell must be a whole number of chirps"}
+  - name: planned_speed_warning
+    set: {platform.planned_speed_mps: 5}
+    warnings:
+      - {field: platform.planned_speed_mps, text: "over the lambda/3 limit"}
