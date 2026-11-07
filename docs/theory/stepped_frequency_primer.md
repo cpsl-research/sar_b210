@@ -28,7 +28,7 @@ sends the next chirp, and glues the sub-bands side by side in the frequency doma
 band is $B_{tot}=(N-1)\Delta f+B$. The synthesizer phase is random after every retune. The leakage (the direct TX-to-RX path, a strong echo at a known
 delay in every step) is a reference: dividing each step by its own leakage phase removes that random phase, so the pieces add coherently
 (method doc §3, stitching §4). The sub-bands overlap
-on purpose, so the band stays continuous after the edges are discarded: the 5 % taper at each end of the chirp and any bins more than 6 dB below the peak (method doc §4). A small overlap must cover those.
+on purpose, so the band stays continuous after the edges are discarded: the 5 % taper at each end of the chirp and any bins more than 6 dB below the peak (method doc §1 and §4). A small overlap must cover those.
 
 ![Fig. 2](../figures/fig_sfp_stitch.png)
 
@@ -48,7 +48,7 @@ warns above $\Delta f>0.9B$ (40.5 MHz here), since the discarded edges eat into 
 
 ![Fig. 3](../figures/fig_sfp_grating.png)
 
-*Fig. 3. Range profile of a point target, flat spectrum, no window (illustrative). Left: the default, first sidelobe −13.5 dB.
+*Fig. 3. Range profile of a point target, flat spectrum, no window (illustrative). Left: the default, first sidelobe −13.3 dB.
 Right: $\Delta f$ = 60 MHz, above the 40.5 MHz warning: a shoulder at −7.8 dB near ±2 m ($c/(2\Delta f)$ = 2.50 m for an ideal gap).*
 
 Default: $\Delta R$ = 2.00 m, $R_{amb}$ = 2998 m, $\Delta f/B$ = 0.67 (no gaps).
@@ -61,14 +61,14 @@ to sweep, which rotates the echo's phase. A **sweep** is one pass through all $N
 across them is a Doppler frequency.
 A target closing at speed $v$ gives $f_D=2v/\lambda$. Sweeps sample it once per $T_s$, so $f_D$ is unambiguous only within
 $\pm 1/(2T_s)$, i.e. the **unambiguous velocity** is $\pm v_{amb}=\pm\lambda/(4T_s)$, a full span of $2v_{amb}$ (faster targets alias), and over $M$ sweeps $f_D$ resolves to
-$1/(MT_s)$, i.e. a velocity resolution $\lambda/(2MT_s)$. (Fig. 4).
+$1/(MT_s)$, i.e. a velocity resolution $\lambda/(2MT_s)$ (Fig. 4).
 
 ![Fig. 4](../figures/fig_sfp_velocity.png)
 
 *Fig. 4. Left: $v_{amb}$ against $T_s$. Right: velocity resolution against $M$, both $T_s$ shown (values at $M$ = 64 annotated).*
 
 Default, $M$ = 64: planned $T_s$ 36.40 ms gives ±0.84 m/s, 2.6 cm/s; measured 30.637 ms (RX-only run) gives
-±1.00 m/s, 3.1 cm/s. Plan a TX+RX run with ±0.84 m/s.
+±1.00 m/s, 3.1 cm/s. For a TX+RX run the unambiguous limit is ±0.84 m/s.
 
 ## 5. The time budget: where $T_s$ comes from
 
@@ -77,8 +77,8 @@ locks; 9.2 ms here, measured on the B210), **wait** (`settle_margin_s`: after lo
 a while, so the burst (one dwell of chirps at one step, one row of `bursts.csv`) is held back until it is stable; 8.0 ms, or `command_lead_s` (2.0 ms) + $T_c$ = 2.02 ms if that is longer, since the host
 issues the timed TX/RX commands that far ahead of the burst) and **dwell** (`dwell_s` = 1.0 ms: 50 chirps of 20 µs, whose average
 gains 10 log10 50 = 17 dB of signal-to-noise ratio, as noise is independent between chirps).
-$T_s$ is therefore **derived, not an input**: $T_s\approx N\times$(retune + wait + dwell), here 2 × 18.2 ms. A config that asks for a
-faster sweep than this arithmetic allows is inconsistent.
+$T_s$ is therefore **derived, not an input**: $T_s\approx N\times$(retune + wait + dwell), here 2 × 18.2 ms. A sweep time shorter than this
+arithmetic allows (say 25 ms here) is inconsistent.
 
 More steps or a longer dwell buy band or energy at the price of a smaller $v_{amb}$.
 
@@ -97,6 +97,8 @@ More steps or a longer dwell buy band or energy at the price of a smaller $v_{am
 | $T_s$ planned / measured | 36.40 ms / 30.637 ms |
 | $v_{amb}$ planned / measured | ±0.84 m/s / ±1.00 m/s |
 | Velocity resolution at $M$ = 64 | 2.6 cm/s / 3.1 cm/s |
+
+Step-by-step GUI use of this: [tutorial 5](../tutorials/05_design_a_waveform.md).
 
 **Why the measured sweep is shorter than planned.** Planned $T_s$ is 2 × 18.2 ms (§5). Measured
 is the mean step-0 to step-0 gap in the run's `bursts.csv` (`run_20261106_155516_rx`, 980 sweeps, σ 0.34 ms): 15.32 ms per step, so

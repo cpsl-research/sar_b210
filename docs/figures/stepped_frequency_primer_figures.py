@@ -165,10 +165,11 @@ axs[1].axvline(-gl, color=MUTED, ls=":", lw=1)
 axs[1].text(gl + 0.2, -8, f"$c/2\\Delta f$ = {gl:.2f} m", fontsize=7.5, color=MUTED)
 savefig(fig, "fig_sfp_grating.png")
 # the quoted grating-lobe level: the highest point of the gapped profile within 0.4 m of c/(2 df)
-sel2 = np.abs(np.abs(r2) - gl) < 0.4
+sel2 = (np.abs(r2) > 1.5) & (np.abs(r2) < 3.5)  # between the gapped profile's first null and the next sidelobe
 GL_LEVEL = p2[sel2].max()
 GL_POS = abs(r2[sel2][np.argmax(p2[sel2])])
-PSL1 = p1[(np.abs(r1) > 3.0) & (np.abs(r1) < 12)].max()  # rect-window sidelobes of the contiguous band
+PSL1 = p1[(np.abs(r1) > 2.2) & (np.abs(r1) < 12)].max()  # first sidelobe: starts just past the first null (~2 m)
+assert abs(PSL1 + 13.26) < 0.1, PSL1  # matches method doc section 5 (rect, one band): -13.3 dB
 assert abs(GL_POS - gl) < 0.5, (GL_POS, gl)  # the lobe sits near c/(2 df); the sub-band envelope pulls it in a little
 assert GL_LEVEL > PSL1 + 4  # clearly above the contiguous band's first sidelobe
 
@@ -247,8 +248,9 @@ assert round(10 * math.log10(N_CHIRPS), 1) == 17.0 and chirp_samples == 1120 and
 print(f"  averaging gain           10 log10({N_CHIRPS}) = {10 * math.log10(N_CHIRPS):.1f} dB; N_c = Tc*fs = {chirp_samples}; centre frequency {CFG.rf.center_freq_hz / 1e6:.2f} MHz (lambda = c/f_c)")
 assert T.command_lead_s == 0.002 and T.settle_margin_s == 0.008 and abs(WAIT - 0.008) < 1e-12
 print(f"  wait                     max(settle {T.settle_margin_s * 1e3:.1f}, command_lead {T.command_lead_s * 1e3:.1f} + Tc {W.chirp_length_s * 1e3:.2f} = {(T.command_lead_s + W.chirp_length_s) * 1e3:.2f}) = {WAIT * 1e3:.1f} ms")
-assert abs(np.mean([CFG.rf.center_freq_hz - W.step_spacing_hz / 2, CFG.rf.center_freq_hz + W.step_spacing_hz / 2]) - CFG.rf.center_freq_hz) < 1
-print(f"  step centres             {(CFG.rf.center_freq_hz - W.step_spacing_hz / 2) / 1e6:.2f}, {(CFG.rf.center_freq_hz + W.step_spacing_hz / 2) / 1e6:.2f} MHz")
+from b210_sar.config import step_centres  # noqa: E402
+assert [round(x) for x in step_centres(CFG)] == [2426750000, 2456750000]
+print(f"  step centres             {step_centres(CFG)[0] / 1e6:.2f}, {step_centres(CFG)[1] / 1e6:.2f} MHz")
 print(f"  R_amb exact c            {DD_PLAN.max_unambiguous_range_m:.1f} m")
 print(f"  Doppler at v_amb         f_D = 2 v_amb/lambda = {2 * DD_MEAS.velocity_span_mps / LAM:.1f} Hz = 1/(2 Ts) = {DD_MEAS.doppler_span_hz:.1f} Hz")
 print(f"  B_tot                    {B_TOT / 1e6:.0f} MHz   (one step alone: {C / (2 * W.chirp_bandwidth_hz):.2f} m)")
