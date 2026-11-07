@@ -241,6 +241,10 @@ print("numbers quoted (docs/theory/stepped_frequency_primer.md)")
 print(f"  config                   configs/default.yaml; N={W.num_steps}, df={W.step_spacing_hz / 1e6:.0f} MHz, B={W.chirp_bandwidth_hz / 1e6:.0f} MHz, "
       f"fs={W.sample_rate_hz / 1e6:.0f} MS/s, Tc={W.chirp_length_s * 1e6:.0f} us ({chirp_samples} samples), dwell={W.dwell_s * 1e3:.0f} ms ({N_CHIRPS} chirps)")
 print(f"  chirp slope B/Tc         {SLOPE / 1e12:.2f} THz/s; beat 2*slope/c = {2 * SLOPE / C / 1e3:.1f} kHz per metre of range")
+assert round(10 * math.log10(N_CHIRPS), 1) == 17.0 and chirp_samples == 1120 and abs(CFG.rf.center_freq_hz - 2441.75e6) < 1
+print(f"  averaging gain           10 log10({N_CHIRPS}) = {10 * math.log10(N_CHIRPS):.1f} dB; N_c = Tc*fs = {chirp_samples}; centre frequency {CFG.rf.center_freq_hz / 1e6:.2f} MHz (lambda = c/f_c)")
+print(f"  R_amb exact c            {DD_PLAN.max_unambiguous_range_m:.1f} m")
+print(f"  Doppler at v_amb         f_D = 2 v_amb/lambda = {2 * DD_MEAS.velocity_span_mps / LAM:.1f} Hz = 1/(2 Ts) = {DD_MEAS.doppler_span_hz:.1f} Hz")
 print(f"  B_tot                    {B_TOT / 1e6:.0f} MHz   (one step alone: {C / (2 * W.chirp_bandwidth_hz):.2f} m)")
 print(f"  range resolution         {DD_PLAN.range_resolution_m:.2f} m")
 print(f"  R_amb = c Tc/2           {DD_PLAN.max_unambiguous_range_m:.0f} m")
