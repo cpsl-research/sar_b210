@@ -1,53 +1,57 @@
-# 01 - The B210 GUI (stub)
+# 1 - Configs: the library, the limits and the GUI
 
-A short start guide for the browser GUI. The full tutorials come later; this
-page covers only what the GUI does today: browse, check and save configs.
-The GUI does not open the radio and cannot transmit.
+A run config is one YAML file that fixes the waveform, gains, band and timing; it is copied into every run folder. Needs [tutorial 0](00_install.md). Nothing here opens the radio or transmits.
 
-## Start it
+## Shipped and user configs
 
-From the repo root:
+`configs/default.yaml` is shipped and read-only: never edit it, copy it. Your configs live in `configs/user/<name>.yaml` (gitignored). Saving validates first and never overwrites. Checks come from `configs/hw_limits.yaml` plus internal consistency (for example the master clock must be a whole multiple of the sample rate).
 
-    uv sync --extra gui
-    env -u PYTHONPATH uv run --extra gui python -m b210_sar.gui --port 8010
+## The CLI
 
-Open `http://localhost:8010/`. Options: `--host` (default `0.0.0.0`, no
-authentication), `--port` (default 8010, or `CONSOLE_B210_GUI_PORT`),
-`--source none` (the only source so far), `--config-root` (use another
-`configs/` directory). Check it is up:
+```bash
+env -u PYTHONPATH uv run python -m b210_sar.configs --list                # shipped and user configs, valid or not
+env -u PYTHONPATH uv run python -m b210_sar.configs --show default        # print the YAML
+env -u PYTHONPATH uv run python -m b210_sar.configs --check default       # validate; print the parameter budget
+env -u PYTHONPATH uv run python -m b210_sar.configs --check default --sweeps 32   # delay-Doppler numbers for M=32
+env -u PYTHONPATH uv run python -m b210_sar.configs --list --json         # machine-readable (also for --check)
+```
 
-    curl http://localhost:8010/api/health      # {"ok":true}
+`--check` takes a name or a path. Exit status: 0 valid, 1 invalid, 2 unknown config. The budget lists the band, range resolution, sweep time, data rate, TX duty cycle and conducted limit. `env -u PYTHONPATH` keeps a sourced ROS 2 from shadowing the venv; drop it if you have none.
 
-## Configs tab
+## Errors and warnings
 
-The list shows the shipped configs and your own, each with a badge for
-valid / warnings / errors, and the planned delay-Doppler numbers derived from the config.
+Every limit in `hw_limits.yaml` has a severity:
 
-1. **Shipped configs are read-only.** Select `default` to view its YAML and
-   derived numbers. It is never written; saving under a shipped name is
-   refused (409).
-2. **Copy to new.** Pick a config and press Copy to new. A form offers the
-   stepped-waveform fields: `num_steps`, `step_spacing_hz`,
-   `chirp_bandwidth_hz`, `chirp_length_s`, `dwell_s`, `taper_fraction`,
-   `sample_rate_hz`, `rx_gain_db`, `tx_gain_db`. Comments in the YAML are kept.
-3. **Check.** Validates the edited YAML and shows the issues and derived
-   numbers. Nothing is written.
-4. **Save.** Writes a new file in `configs/user/` (refused if the name
-   exists or the config has errors).
-5. **Delete.** Removes a user config after a confirmation prompt. Shipped
-   configs cannot be deleted (403).
+- **error**: a chip or UHD limit (for example `tx_gain_db` above 89.8 dB, a tune outside 50 MHz to 6 GHz). The config is refused.
+- **warning**: a USB or library-level limit that may be exceeded in practice (for example a sample rate above the 56 MHz analog bandwidth). It still saves, with the warning shown.
 
-## Hardware limits: errors vs warnings
+A config over its own cap fails too: `tx_gain_db` above `max_tx_gain_db` (40 dB in `default`), which capture also refuses at run time. Try it on a throwaway copy:
 
-Checks use `configs/hw_limits.yaml`.
+```bash
+mkdir -p runs && sed 's/^  tx_gain_db: 20 /  tx_gain_db: 95 /' configs/default.yaml > runs/bad.yaml
+env -u PYTHONPATH uv run python -m b210_sar.configs --check runs/bad.yaml; echo "exit $?"
+```
 
-- **Error** - a chip or UHD limit (for example `tx_gain_db` above the cap).
-  The config cannot be saved.
-- **Warning** - a USB or library-level limit that may be exceeded in practice
-  (for example a sample rate the link may not sustain). It saves, with the
-  warning shown.
+Expect `INVALID`, two `error:` lines (above `max_tx_gain_db`, above the 89.8 dB UHD limit) and `exit 1`. Delete `runs/bad.yaml` afterwards.
 
-## Where files live
+## The GUI Configs tab
 
-User configs are in `configs/user/` (gitignored, except its `README.md`).
-Shipped configs are the other files in `configs/`.
+Start it (port 8010 by default; `--port` to change). Options: `--host` (default `0.0.0.0`, no authentication: keep it on a trusted network), `--config-root` (another `configs/` directory), and the file options of [tutorial 2](02_gui_on_files.md).
+
+```bash
+env -u PYTHONPATH uv run --extra gui python -m b210_sar.gui --port 8010
+curl http://localhost:8010/api/health      # {"ok":true}
+```
+
+Open `http://localhost:8010/` and press **Configs**. The list shows each config with a valid / warnings / errors badge and its sweep time; selecting one shows the issues, derived numbers (including the planned delay-Doppler values) and the YAML.
+
+![Configs tab](img/configs.png)
+
+1. **Copy to new...** opens a form on a copy: `num_steps`, `step_spacing_hz`, `chirp_bandwidth_hz`, `chirp_length_s`, `dwell_s`, `taper_fraction`, `sample_rate_hz`, `rx_gain_db`, `tx_gain_db`. Comments in the YAML are kept.
+2. **Check** validates the edit and shows issues and derived numbers. Nothing is written.
+3. **Save as new** writes `configs/user/<name>.yaml`; refused if the name exists, is a shipped name (409), or the config has errors.
+4. **Delete** removes a user config after a confirm; shipped configs cannot be deleted (403).
+
+Stop the GUI with Ctrl-C.
+
+Next: [2, the GUI on recorded runs](02_gui_on_files.md).

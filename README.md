@@ -91,9 +91,19 @@ opens the radio.
     uv sync --extra gui
     env -u PYTHONPATH uv run --extra gui python -m b210_sar.gui --port 8010
 
-Then open `http://localhost:8010/`. Short guide: `docs/tutorials/01_gui.md`.
+Then open `http://localhost:8010/`. Step-by-step guides: the tutorials below.
 Screenshots of it can be taken with console's `tools/pagecap.py --url`; the
 spec is `tools/gui_shots.json`.
+
+## Tutorials
+
+Short, copy-pasteable lessons in [`docs/tutorials/`](docs/tutorials/). Do 0 to 2 in order; none opens the radio.
+
+0. [Install and the host doctor](docs/tutorials/00_install.md): clone, `uv sync`, `host_setup.py`, build the capture
+1. [Configs and the GUI](docs/tutorials/01_gui.md): shipped vs user configs, hardware limits, the `b210_sar.configs` CLI, the Configs tab
+2. [The GUI on recorded runs](docs/tutorials/02_gui_on_files.md): run folders, HDF5, the simulator
+3. [The GUI live over ROS 2](docs/tutorials/03_gui_live_ros.md): pending hardware runs
+4. [Troubleshooting](docs/tutorials/04_troubleshooting.md): setup and file errors; hardware entries pending
 
 ## Python
 
