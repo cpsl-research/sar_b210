@@ -106,15 +106,18 @@ function buildForm(values) {
   box.replaceChildren();
   for (const [key, label, unit] of FIELDS) {
     const l = el("label"); l.append(el("span", `${label} ${unit}`.trim()));
-    const i = el("input"); i.name = key; i.value = values[key] ?? ""; i.inputMode = "decimal"; i.disabled = true;
+    const i = el("input"); i.name = key; i.value = values[key] ?? ""; i.dataset.orig = i.value; i.inputMode = "decimal"; i.disabled = true;
     i.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(check, 150); });
     l.append(i); box.append(l);
   }
 }
 
+// Only fields the user changed are sent; the YAML text stays the source of truth for the rest. (Echoing every
+// displayed value back would round whole-sample quantities such as chirp_length_s and break them.)
 function formFields() {
   const f = {};
   for (const i of $("cfg-fields").querySelectorAll("input")) {
+    if (i.value === i.dataset.orig) continue;
     const v = Number(i.value);
     if (i.value.trim() === "" || !Number.isFinite(v)) throw new Error(`${i.name}: enter a number`);
     f[i.name] = v;

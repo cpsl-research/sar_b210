@@ -37,7 +37,7 @@ def _plain(v: float) -> str:
     """Plain decimal: PyYAML reads 56e6 as a string, so never emit an exponent."""
     if abs(v - round(v)) < 1e-9 and abs(v) < 1e15:
         return str(int(round(v)))
-    return format(v, ".12f").rstrip("0").rstrip(".")
+    return format(v, ".15f").rstrip("0").rstrip(".")
 
 
 def set_fields(text: str, fields: dict) -> str:

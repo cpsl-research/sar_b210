@@ -174,3 +174,22 @@ def test_save_anyway_marks_invalid_and_never_touches_shipped(client, root):
     assert client.post("/api/configs", json={"name": "default", "yaml": text, "allow_invalid": True}).status_code == 409
     assert client.post("/api/configs", json={"name": "junk", "yaml": "a: [1", "allow_invalid": True}).status_code == 400
     assert sha(root / "default.yaml") == before
+
+
+def test_generated_draft_round_trips_through_form_values(client, root):
+    """Verify case (2 m, 3000 m, 5 m/s): the form shows rounded values; saving with only edited fields passes."""
+    g = client.post("/api/configs/generate", json={"range_res_m": 2.0, "max_range_m": 3000, "max_velocity_mps": 5}).json()
+    assert g["ok"]
+    # what the form shows, edited fields only (none): YAML is the source of truth
+    assert client.post("/api/configs", json={"name": "gen_ok", "yaml": g["yaml"], "fields": {}}).status_code == 201
+    # one unrelated edit still saves (chirp_length_s untouched)
+    r = client.post("/api/configs", json={"name": "gen_ok2", "yaml": g["yaml"], "fields": {"rf.rx_gain_db": 25}})
+    assert r.status_code == 201, r.text
+    # a hand-typed chirp length that is not a whole number of samples is rejected (visible error), not snapped
+    bad = {"waveform.chirp_length_s": 0.0000200178}
+    chk = client.post("/api/configs/check", json={"yaml": g["yaml"], "fields": bad}).json()["report"]
+    assert not chk["valid"] and any(e["field"] == "waveform.chirp_length_s" for e in chk["errors"])
+    assert client.post("/api/configs", json={"name": "gen_bad", "yaml": g["yaml"], "fields": bad}).status_code == 400
+    # a whole-sample value typed to full precision is accepted: 1121 samples at 56 MS/s
+    ok = {"waveform.chirp_length_s": 1121 / 56e6, "waveform.dwell_s": 50 * 1121 / 56e6}
+    assert client.post("/api/configs/check", json={"yaml": g["yaml"], "fields": ok}).json()["report"]["valid"]
