@@ -1,0 +1,238 @@
+# B210 hardware limits. Tracked, read-only data (never written by the GUI or the config library).
+# Memo with the reasoning and caveats: console docs/research/2026-11-06-b210-hw-limits.md
+#
+# kind:     chip | uhd | usb | library   (what imposes the limit)
+# severity: error (chip, uhd) | warning (usb, library)  -- user ruling 2026-11-06
+#           one row (master clock above 56 MHz) is kind uhd but severity warning: the UHD manual calls it
+#           "possible, but not recommended", so it is advisory, not a refusal.
+# min/max/step: null = no bound. unit: Hz | dB | s | B/s | samples/s | bytes | list
+# apply_to: the config field(s) the limit applies to, and how (see notes).
+# probe_value: what `uhd_usrp_probe --args type=b200` printed on this unit (serial 3271117, UHD 4.6.0.0,
+#              USB 3, FPGA 16.0, 2026-11-06); null where the probe does not report the quantity.
+# Plain decimals on purpose: PyYAML reads 56e6 as a string.
+# Planned vs measured: rows with `measured` carry a number observed on this host; `value`-style limits
+# are never measured numbers. Derived numbers (sweep time, Doppler) must say which of `retune_s`
+# (planned, shipped 0.0092) or the measured mean sweep period they used.
+
+version: 1
+unit_under_test:
+  device: "B210"
+  serial: "3271117"
+  uhd: "4.6.0.0"
+  probe_date: "2026-11-06"
+  usb_speed: 3
+  channels_used_by_capture: 1   # capture/src/uhd_radio.cpp kChannel = 0, one TX and one RX on frontend A
+
+limits:
+  - key: rf.center_freq_hz.rx_tune
+    apply_to: "every step centre: rf.center_freq_hz + (i - (num_steps-1)/2) * waveform.step_spacing_hz, i = 0..num_steps-1"
+    min: 50000000
+    max: 6000000000
+    step: null
+    unit: Hz
+    kind: uhd
+    severity: error
+    source: "UHD manual B200 page, 'Each LO is tunable between 50 MHz and 6 GHz'; https://files.ettus.com/manual/page_usrp_b200.html"
+    probe_value: "50.000 to 6000.000 MHz (FE-RX1, FE-RX2)"
+    note: "Ettus spec sheet and product page guarantee 70 MHz-6 GHz (spec performance); 50-70 MHz is tunable but outside the specified range. AD9361 RX LO is 70 MHz-6 GHz per the datasheet summary (not read in full, see memo)."
+
+  - key: rf.center_freq_hz.tx_tune
+    apply_to: "every step centre, same as rx_tune (capture tunes TX and RX together)"
+    min: 50000000
+    max: 6000000000
+    step: null
+    unit: Hz
+    kind: uhd
+    severity: error
+    source: "UHD manual B200 page ('Each LO is tunable between 50 MHz and 6 GHz'); https://files.ettus.com/manual/page_usrp_b200.html"
+    probe_value: "50.000 to 6000.000 MHz (FE-TX1, FE-TX2)"
+    note: "AD9361 TX LO reaches 47 MHz per the datasheet, UHD advertises 50 MHz."
+
+  - key: rf.tx_gain_db
+    apply_to: "rf.tx_gain_db and rf.max_tx_gain_db"
+    min: 0.0
+    max: 89.8
+    step: 0.2
+    unit: dB
+    kind: uhd
+    severity: error
+    source: "UHD manual B200 page, 'the transmit frontends have 89.8 dB of available gain'; UHD v4.6.0.0 ad9361_device.cpp AD9361_MAX_GAIN = 89.75, -0.25 dB per attenuator step; https://github.com/EttusResearch/uhd/tree/v4.6.0.0/host/lib/usrp"
+    probe_value: "Gain range PGA: 0.0 to 89.8 step 0.2 dB (FE-TX1, FE-TX2)"
+    note: "Out-of-range requests are clipped by UHD, not refused, so the check must be ours. The chip step is 0.25 dB while UHD advertises 0.2; a value is quantised, never rejected for being off-step. max_tx_gain_db is a per-config safety cap and is only bounded by this range."
+
+  - key: rf.rx_gain_db
+    apply_to: "rf.rx_gain_db"
+    min: 0.0
+    max: 76.0
+    step: 1.0
+    unit: dB
+    kind: uhd
+    severity: error
+    source: "UHD manual B200 page, 'the receive frontends have 76 dB of available gain'; UHD v4.6.0.0 ad9361_device.cpp (RX gain index capped at 76); https://files.ettus.com/manual/page_usrp_b200.html"
+    probe_value: "0.0 to 76.0 step 1.0 dB (FE-RX1, FE-RX2)"
+    note: "UHD clips and rounds to the 1 dB index; rx_gain_db non-integer is quantised, not rejected."
+
+  - key: device.master_clock_rate_hz.range_1ch
+    apply_to: "device.master_clock_rate_hz when one channel is used (capture default)"
+    min: 5000000
+    max: 61440000
+    step: null
+    unit: Hz
+    kind: uhd
+    severity: error
+    source: "UHD manual B200 page, 'The clock rate can be set to any value between 5 MHz and 61.44 MHz (or 30.72 MHz for dual-channel mode)'; UHD v4.6.0.0 b200_impl.cpp enforce_tick_rate_limits; https://files.ettus.com/manual/page_usrp_b200.html"
+    probe_value: "automatic selection gave 16.000000 MHz at probe time; range not printed"
+    note: "UHD source enforces a floor of 220 kHz (AD9361_MIN_CLOCK_RATE) but the manual documents 5 MHz; the table uses the documented value."
+
+  - key: device.master_clock_rate_hz.range_2ch
+    apply_to: "device.master_clock_rate_hz if a config ever uses two channels (capture does not)"
+    min: 2500000
+    max: 30720000
+    step: null
+    unit: Hz
+    kind: uhd
+    severity: error
+    source: "UHD manual B200 page ('30.72 MHz for dual-channel mode'); UHD v4.6.0.0 b200_impl.cpp enforce_tick_rate_limits halves both bounds for 2 channels; https://files.ettus.com/manual/page_usrp_b200.html"
+    probe_value: null
+    note: "Lower bound is the documented 5 MHz halved as in the UHD source; inferred, no documented number."
+
+  - key: device.master_clock_rate_hz.recommended_max
+    apply_to: "device.master_clock_rate_hz"
+    min: null
+    max: 56000000
+    step: null
+    unit: Hz
+    kind: uhd
+    severity: warning
+    source: "UHD manual B200 page, 'rates above 56 MHz are possible, but not recommended'; https://files.ettus.com/manual/page_usrp_b200.html"
+    probe_value: null
+    note: "Advisory only; kind uhd but severity warning on purpose (see header)."
+
+  - key: waveform.sample_rate_hz.range_1ch
+    apply_to: "waveform.sample_rate_hz, one channel"
+    min: null
+    max: 61440000
+    step: null
+    unit: Hz
+    kind: chip
+    severity: error
+    source: "Ettus B200/B210 spec sheet 'ADC/DAC Sample Rate (max) 61.44 MS/s'; https://mm.digikey.com/Volume0/opasdata/d220001/medias/docus/7161/b200_b210_spec_sheet-3236990.pdf"
+    probe_value: null
+    note: "Also must be <= device.master_clock_rate_hz and master/sample must be a whole number (library check in run_config.cpp, tag library, already enforced). Sample rate above 56 MS/s exceeds the 56 MHz analog bandwidth (usable bandwidth stays 56 MHz). Spec sheet: 56 MHz instantaneous bandwidth in 1x1. No lower sample-rate limit is documented by Ettus; UHD derives rates by integer decimation of the master clock."
+
+  - key: waveform.sample_rate_hz.range_2ch
+    apply_to: "waveform.sample_rate_hz per channel, if two channels are ever used"
+    min: null
+    max: 30720000
+    step: null
+    unit: Hz
+    kind: chip
+    severity: error
+    source: "Ettus B200/B210 spec sheet 'Up to 30.72 MHz of instantaneous bandwidth in 2x2' and UHD manual (30.72 MHz dual-channel master clock); https://mm.digikey.com/Volume0/opasdata/d220001/medias/docus/7161/b200_b210_spec_sheet-3236990.pdf"
+    probe_value: null
+    note: "Capture uses one channel, so this row is data for a future dual-channel option."
+
+  - key: waveform.sample_rate_hz.usb3_streaming
+    apply_to: "waveform.sample_rate_hz x channels x 4 bytes (sc16), only while streaming"
+    min: null
+    max: 61440000
+    step: null
+    unit: samples/s
+    kind: usb
+    severity: warning
+    source: "UHD v4.6.0.0 b200_impl.hpp B200_MAX_RATE_USB3 = 500000000 bytes/s (link ceiling, = 125 MS/s sc16 aggregate); Ettus spec sheet: 61.44 MS/s host rate 'on select USB 3.0 chipsets'"
+    probe_value: "Operating over USB 3 (5000M after FPGA load)"
+    note: "Nominal ceiling 61.44 MS/s aggregate (245.76 MB/s sc16), above that the radio cannot go anyway. Practical sustained rate on this host is NOT measured: b210-02 ran RX at 56 MS/s for 20 s on USB 3 with no overflow lines, but RX is burst-gated, so the continuous-stream duty is unproven. Needs recv_frame_size/num_recv_frames args (shipped default: num_recv_frames=512,recv_frame_size=8200)."
+
+  - key: waveform.sample_rate_hz.usb2_streaming
+    apply_to: "waveform.sample_rate_hz x channels x 4 bytes (sc16), when the probe/open reports USB 2"
+    min: null
+    max: 13312000
+    step: null
+    unit: samples/s
+    kind: usb
+    severity: warning
+    source: "UHD v4.6.0.0 b200_impl.hpp B200_MAX_RATE_USB2 = 53248000 bytes/s; 53.248 MB/s / 4 bytes (sc16) = 13.312 MS/s aggregate; https://github.com/EttusResearch/uhd/tree/v4.6.0.0/host/lib/usrp"
+    probe_value: "not applicable (this unit enumerated at USB 3); b210-01 saw 'Operating over USB 2' on an earlier port"
+    note: "Applies only when the device is actually on USB 2; the config library cannot know this offline, so a GUI/node with a live device should apply it, an offline validate should not. The shipped 56 MS/s default cannot run on USB 2."
+
+  - key: rf.analog_bandwidth_hz
+    apply_to: "waveform.sample_rate_hz (capture sets TX/RX analog bandwidth = sample_rate_hz, clipped to this range, uhd_radio.cpp) and waveform.chirp_bandwidth_hz"
+    min: 200000
+    max: 56000000
+    step: null
+    unit: Hz
+    kind: uhd
+    severity: error
+    source: "UHD manual B200 page, 'seamlessly adjustable bandwidth of 200 kHz to 56 MHz' and 'UHD will not allow you to set bandwidths larger than your current master clock rate'; UHD v4.6.0.0 ad9361_device.cpp AD9361_MIN_BW/MAX_BW"
+    probe_value: "200000.0 to 56000000.0 step 0.0 Hz (all four frontends)"
+    note: "chirp_bandwidth_hz must be <= this max (error). Coupling: the capture library asks for analog bandwidth = sample_rate_hz and UHD clips it, so at 56 MS/s the filter is 56 MHz wide and usable alias-free bandwidth is about 0.8 x sample rate; the library check |lo_offset| + chirp_bandwidth/2 <= sample_rate/2 is the Nyquist limit (library, already enforced). Analog bandwidth <= master_clock_rate_hz (uhd)."
+
+  - key: rf.tx_antenna
+    apply_to: "rf.tx_antenna (channel A)"
+    allowed: ["TX/RX"]
+    unit: list
+    kind: uhd
+    severity: error
+    source: "UHD manual B200 page port table (RF A: TX/RX J801, RF B: TX/RX J800); https://files.ettus.com/manual/page_usrp_b200.html"
+    probe_value: "Antennas: TX/RX (TX Frontend A and B)"
+    note: "The TX path has exactly one port per channel."
+
+  - key: rf.rx_antenna
+    apply_to: "rf.rx_antenna (channel A)"
+    allowed: ["TX/RX", "RX2"]
+    unit: list
+    kind: uhd
+    severity: error
+    source: "UHD manual B200 page port table (RF A: TX/RX, RF A: RX2 J803); https://files.ettus.com/manual/page_usrp_b200.html"
+    probe_value: "Antennas: TX/RX, RX2 (RX Frontend A and B)"
+    note: "Shipped config uses RX2 so RX never sees the TX/RX connector directly."
+
+  - key: timing.retune_s
+    apply_to: "timing.retune_s (budget assumes this tune+lock+command overhead per step)"
+    min: 0.0069
+    max: null
+    step: null
+    unit: s
+    kind: library
+    severity: warning
+    source: "sar_b210 b210-02 Log: sar_bench_probe 500 retunes, tune median 5.922 ms, p99 6.935 ms, max 74.082 ms; config default retune_s 0.0092 (a 20 s run)"
+    probe_value: null
+    measured:
+      tune_median_s: 0.005922
+      tune_p99_s: 0.006935
+      tune_max_s: 0.074082
+      lock_check_median_s: 0.000092
+    note: "Not a chip limit: the AD9361 LO relock is far below this and UHD's set_freq round-trip over USB dominates. A retune_s below the measured p99 (6.9 ms) risks bursts that start before the LO is locked; the capture library separately waits settle_margin_s and timing.lock_timeout_s. Planned: 9.2 ms (shipped, sweep 36.40 ms). Measured: ~5.9 ms median tune; mean sweep period 30.64-30.66 ms (b210-02, b210-13). A '6.3 ms' figure was in the brief but not found in either source."
+
+  - key: timing.sweep_period_s.planned_vs_measured
+    apply_to: "derived numbers only (not a config field)"
+    min: null
+    max: null
+    step: null
+    unit: s
+    kind: library
+    severity: warning
+    source: "sar_b210 capture/src/budget.cpp; b210-13 memo docs/delay_doppler.md section 5; b210-02 Log"
+    probe_value: null
+    measured:
+      sweep_period_planned_s: 0.03640
+      sweep_period_measured_mean_s: 0.03064
+    note: "Label every derived Doppler/velocity number 'planned' (from retune_s) or 'measured' (from burst timestamps)."
+
+# Rules the capture library already enforces (capture/src/run_config.cpp validate_config). Listed so the
+# Python validator reproduces them; they are not hardware limits and are not duplicated as rows above.
+library_validation:
+  - "rates and durations > 0"
+  - "sample_rate <= master_clock and master_clock/sample_rate is a whole number"
+  - "chirp_length x sample_rate is a whole number >= 2"
+  - "dwell / chirp_length is a whole number >= 1"
+  - "num_steps >= 1; step_spacing > 0; chirp_bandwidth > 0"
+  - "|lo_offset| + chirp_bandwidth/2 <= sample_rate/2"
+  - "0 <= taper_fraction <= 0.5; 0 < tx_amplitude <= 1"
+  - "rf.tx_mode == timed_burst; timing.sync_mode in {host_clock, pps}"
+  - "retune_s >= 0, settle_margin_s >= 0, command_lead_s > 0, lock_timeout_s > 0, clock_sync_interval_s > 0, max_run_s > 0"
+  - "permitted_band complete (min_hz, max_hz, legal_basis, max_avg_eirp_dbm all non-null) and the sweep (centre +/- half span) inside it"
+  - "antenna.gain_dbi non-null"
+  - "tx_gain_db <= max_tx_gain_db"
+  - "warning: planned_speed_mps over the lambda/3 limit"
