@@ -5,6 +5,7 @@ import shutil
 from pathlib import Path
 
 import pytest
+import yaml
 
 pytest.importorskip("fastapi")
 pytest.importorskip("httpx")
@@ -193,3 +194,134 @@ def test_generated_draft_round_trips_through_form_values(client, root):
     # a whole-sample value typed to full precision is accepted: 1121 samples at 56 MS/s
     ok = {"waveform.chirp_length_s": 1121 / 56e6, "waveform.dwell_s": 50 * 1121 / 56e6}
     assert client.post("/api/configs/check", json={"yaml": g["yaml"], "fields": ok}).json()["report"]["valid"]
+
+
+# ---- b210-28: every operator field editable, in display units --------------------------------------------
+
+GROUPS = {"RF", "Waveform", "Timing", "Capture"}
+EXPECTED = {
+    "rf.center_freq_hz", "rf.lo_offset_hz", "rf.tx_gain_db", "rf.rx_gain_db", "rf.tx_antenna", "rf.rx_antenna",
+    "waveform.sample_rate_hz", "waveform.num_steps", "waveform.step_spacing_hz", "waveform.chirp_bandwidth_hz",
+    "waveform.chirp_length_s", "waveform.dwell_s", "waveform.chirps_per_dwell", "waveform.taper_fraction",
+    "waveform.tx_amplitude", "timing.retune_s", "timing.settle_margin_s", "timing.command_lead_s",
+    "timing.lock_timeout_s", "timing.clock_sync_interval_s", "timing.max_run_s", "timing.sync_mode",
+    "platform.planned_speed_mps", "antenna.gain_dbi", "antenna.beamwidth_deg"}
+
+
+def test_fields_endpoint_exact_list_and_groups(client):
+    j = client.get("/api/configs/fields").json()
+    keys = {f["key"] for f in j["fields"]}
+    assert keys == EXPECTED
+    assert {f["group"] for f in j["fields"]} == GROUPS and set(j["groups"]) == GROUPS
+    assert not [k for k in keys if k.startswith(("device.", "permitted_band.", "output.")) or k == "rf.tx_mode"]
+    assert "rf.max_tx_gain_db" not in keys and [r["key"] for r in j["readonly"]] == ["rf.max_tx_gain_db"]
+    assert all({"key", "label", "group", "kind", "unit", "scale", "hint"} <= set(f) for f in j["fields"])
+    ant = next(f for f in j["fields"] if f["key"] == "rf.tx_antenna")
+    assert ant["kind"] == "enum" and ant["options"] == ["TX/RX", "RX2"]
+
+
+def test_excluded_and_readonly_keys_rejected():
+    text = (REPO / "configs" / "default.yaml").read_text()
+    for k in ("device.args", "device.master_clock_rate_hz", "output.dataset_root", "permitted_band.min_hz",
+              "permitted_band.legal_basis", "rf.tx_mode", "rf.max_tx_gain_db", "antenna.type", "nope.x"):
+        for kw in ({"fields": {k: 1}}, {"display": {k: "1"}}):
+            with pytest.raises(ValueError):
+                set_fields(text, kw.get("fields", {}), kw.get("display", {}))
+
+
+def test_antenna_and_enum_values_validated():
+    text = (REPO / "configs" / "default.yaml").read_text()
+    for k, bad in (("rf.tx_antenna", "TX2"), ("rf.rx_antenna", "rx2"), ("timing.sync_mode", "gps")):
+        with pytest.raises(ValueError):
+            set_fields(text, {k: bad})
+    out = set_fields(text, {"rf.rx_antenna": "TX/RX", "timing.sync_mode": "pps"})
+    assert 'rx_antenna: "TX/RX"' in out and 'sync_mode: "pps"' in out and "# [fixed] channel A" in out
+
+
+def test_to_si_from_si_roundtrip_every_field():
+    from b210_sar.gui.configs_api import FIELDS, from_si, to_si
+    samples = {"float": ["1", "2450", "20.017857143", "0.5", "12.3456789"], "int": ["1", "3", "40"]}
+    for f in FIELDS:
+        if f["kind"] == "enum":
+            for o in f["options"]:
+                assert from_si(f["key"], to_si(f["key"], o)) == o
+            continue
+        for shown in samples[f["kind"]]:
+            si = to_si(f["key"], shown)
+            assert "e" not in si.lower()  # plain decimal text
+            assert from_si(f["key"], float(si)) == shown, (f["key"], shown, si)
+    assert to_si("rf.center_freq_hz", "2450") == "2450000000"
+    assert to_si("waveform.chirp_length_s", "20.017857143") == "0.000020017857143"
+    assert to_si("timing.retune_s", "10") == "0.01"
+    with pytest.raises(ValueError):
+        to_si("waveform.num_steps", "2.5")
+    with pytest.raises(ValueError):
+        to_si("rf.rx_gain_db", "abc")
+
+
+GROUP_EDITS = {
+    "RF": {"rf.center_freq_hz": "2445", "rf.lo_offset_hz": "0", "rf.tx_gain_db": "15", "rf.rx_gain_db": "25",
+           "rf.rx_antenna": "TX/RX"},
+    "Waveform": {"waveform.num_steps": "3", "waveform.step_spacing_hz": "15", "waveform.chirp_bandwidth_hz": "25",
+                 "waveform.taper_fraction": "0.1", "waveform.tx_amplitude": "0.5", "waveform.chirps_per_dwell": "40"},
+    "Timing": {"timing.retune_s": "10", "timing.settle_margin_s": "9", "timing.command_lead_s": "3",
+               "timing.lock_timeout_s": "120", "timing.clock_sync_interval_s": "2", "timing.max_run_s": "90",
+               "timing.sync_mode": "pps"},
+    "Capture": {"platform.planned_speed_mps": "0.4", "antenna.gain_dbi": "9", "antenna.beamwidth_deg": "55"},
+}
+
+
+@pytest.mark.parametrize("group", sorted(GROUP_EDITS))
+def test_each_group_edit_checks_and_saves_on_default(client, root, group):
+    text = client.get("/api/configs/default").json()["yaml"]
+    d = GROUP_EDITS[group]
+    chk = client.post("/api/configs/check", json={"yaml": text, "display": d}).json()
+    assert chk["ok"] and chk["report"]["valid"], chk["report"]["errors"]
+    assert "# [fixed]" in chk["yaml"] and chk["yaml"].count("\n") == text.count("\n")  # comments/lines kept
+    for k, shown in d.items():  # the form shows back what was typed
+        assert chk["display"][k] == shown, k
+    assert client.post("/api/configs", json={"name": f"g_{group}", "yaml": text, "display": d}).status_code == 201
+    saved = yaml.safe_load((root / "user" / f"g_{group}.yaml").read_text())
+    assert saved["rf"]["max_tx_gain_db"] == 40 and saved["device"]["args"].startswith("type=b200")
+
+
+def test_display_units_write_si_and_chirps_per_dwell(client, root):
+    text = client.get("/api/configs/default").json()["yaml"]
+    d = {"rf.center_freq_hz": "2450", "waveform.num_steps": "3", "waveform.step_spacing_hz": "15",
+         "waveform.chirp_bandwidth_hz": "25", "timing.retune_s": "10", "waveform.chirps_per_dwell": "40"}
+    r = client.post("/api/configs", json={"name": "units", "yaml": text, "display": d})
+    assert r.status_code == 201, r.text
+    body = (root / "user" / "units.yaml").read_text()
+    assert "center_freq_hz: 2450000000" in body and "num_steps: 3 " in body and "retune_s: 0.01 " in body
+    assert "dwell_s: 0.0008 " in body  # 40 * 20 us
+    v = client.get("/api/configs/units?kind=user").json()
+    assert v["values"]["waveform.chirps_per_dwell"] == 40 and v["display"]["waveform.dwell_s"] == "0.8"
+    assert v["display"]["rf.center_freq_hz"] == "2450" and v["values"]["rf.max_tx_gain_db"] == 40
+    with pytest.raises(ValueError):
+        set_fields(text, {"waveform.dwell_s": 0.001}, {"waveform.chirps_per_dwell": "10"})
+
+
+def test_whole_sample_chirp_typed_in_us_and_non_whole_rejected(client, root):
+    text = client.get("/api/configs/default").json()["yaml"]
+    # 1121 samples at 56 MS/s = 20.017857142857143 us, typed to full precision (or rounded to 9 decimals:
+    # 20.017857143 us, inside the 1e-6 sample tolerance): both accepted, dwell set by chirps per dwell
+    ok = {"waveform.chirp_length_s": "20.017857142857143", "waveform.chirps_per_dwell": "50"}
+    chk = client.post("/api/configs/check", json={"yaml": text, "display": ok}).json()
+    assert chk["report"]["valid"], chk["report"]["errors"]
+    assert client.post("/api/configs", json={"name": "ws", "yaml": text, "display": ok}).status_code == 201
+    short = {"waveform.chirp_length_s": "20.017857143", "waveform.chirps_per_dwell": "50"}
+    assert client.post("/api/configs", json={"name": "ws9", "yaml": text, "display": short}).status_code == 201
+    # a hand-typed non-whole-sample value shows the whole-sample error and is never snapped
+    bad = {"waveform.chirp_length_s": "20.0179", "waveform.chirps_per_dwell": "50"}
+    chk = client.post("/api/configs/check", json={"yaml": text, "display": bad}).json()
+    assert any(e["field"] == "waveform.chirp_length_s" and "whole number of samples" in e["message"]
+               for e in chk["report"]["errors"])
+    assert "chirp_length_s: 0.0000200179" in chk["yaml"]  # written as typed
+    assert client.post("/api/configs", json={"name": "wsbad", "yaml": text, "display": bad}).status_code == 400
+
+
+def test_generated_draft_then_edit_elsewhere_saves(client):
+    g = client.post("/api/configs/generate", json={"range_res_m": 2.0, "max_range_m": 3000, "max_velocity_mps": 5}).json()
+    assert g["ok"] and g["display"]["waveform.chirp_length_s"]
+    r = client.post("/api/configs", json={"name": "gen_tweak", "yaml": g["yaml"], "display": {"rf.rx_gain_db": "25"}})
+    assert r.status_code == 201, r.text
