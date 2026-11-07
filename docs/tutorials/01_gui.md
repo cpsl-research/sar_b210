@@ -43,14 +43,17 @@ env -u PYTHONPATH uv run --extra gui python -m b210_sar.gui --port 8010
 curl http://localhost:8010/api/health      # {"ok":true}
 ```
 
-Open `http://localhost:8010/` and press **Configs**. The list shows each config with a valid / warnings / errors badge and its sweep time; selecting one shows the issues, derived numbers (including the planned delay-Doppler values) and the YAML.
+Open `http://localhost:8010/` and press **Configs**. The list shows each config with a valid / INVALID badge and its sweep time. Selecting one shows the **Waveform construction** card, the parameters, the issues, the derived numbers (including the planned delay-Doppler values) and the YAML.
 
 ![Configs tab](img/configs.png)
 
-1. **Copy to new...** opens a form on a copy: `num_steps`, `step_spacing_hz`, `chirp_bandwidth_hz`, `chirp_length_s`, `dwell_s`, `taper_fraction`, `sample_rate_hz`, `rx_gain_db`, `tx_gain_db`. Comments in the YAML are kept.
-2. **Check** validates the edit and shows issues and derived numbers. Nothing is written.
-3. **Save as new** writes `configs/user/<name>.yaml`; refused if the name exists, is a shipped name (409), or the config has errors.
-4. **Delete** removes a user config after a confirm; shipped configs cannot be deleted (403).
+**The live view.** The card has two drawings of the *planned* waveform, plus the headline numbers (total band, range resolution, unambiguous range and velocity). The frequency-vs-time view shows the first three chirps of each step's dwell, the step centres, the stitched total band, the overlap between adjacent steps and the `permitted_band` limits (red). The timing view shows each step as retune | wait/settle | dwell and the sweep period. Timing is the config's, not a measurement. Nothing here opens the radio.
+
+**Edit.** Press **Copy to new...** to make the parameter fields editable (`num_steps`, `step_spacing_hz`, `chirp_bandwidth_hz`, `chirp_length_s`, `dwell_s`, `taper_fraction`, `sample_rate_hz`, `rx_gain_db`, `tx_gain_db`; comments in the YAML are kept). Every change re-checks after a moment and redraws the diagram, the issues and the numbers. Nothing is written until you save.
+
+**Generate from targets.** The left panel takes a range resolution, a maximum range, an optional maximum velocity, chirps per dwell, an optional centre frequency and number of steps, and a base config (everything else is copied from it). **Generate** shows target against achieved numbers and the warnings. It is best effort: an unreachable target (a velocity the per-step retune and settle time cannot meet, a band outside `permitted_band`) gives the closest config and a warning. **Load result as draft** puts it in the view for editing. **Use its numbers as targets** on a selected config fills the form with that config's own numbers.
+
+**Save.** Type a name and press **Save as new**: it writes `configs/user/<name>.yaml`, and is refused if the name exists or is a shipped name (409). A draft with errors cannot be saved, unless you tick **save even with errors**: the file is then written with an `# INVALID` header, shows INVALID in the list, and capture and launch still refuse to run it. **Delete** removes a user config after a confirm; shipped configs cannot be deleted (403).
 
 Stop the GUI with Ctrl-C.
 

@@ -84,9 +84,10 @@ against `CLOCK_MONOTONIC` and `CLOCK_REALTIME`. Each burst lasts `num_samples / 
 
 ## GUI
 
-A browser GUI for the config library (browse shipped and user configs, copy,
-check against the B210 hardware limits, save to `configs/user/`). It never
-opens the radio.
+A browser GUI for the config library (browse shipped and user configs, see the
+planned waveform and timing redraw as you edit, generate a config from range /
+velocity targets, check against the B210 hardware limits, save to
+`configs/user/`). It never opens the radio.
 
     uv sync --extra gui
     env -u PYTHONPATH uv run --extra gui python -m b210_sar.gui --port 8010
