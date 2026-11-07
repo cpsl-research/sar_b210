@@ -45,6 +45,10 @@ public:
                          RadioFactory radio_factory = nullptr);
     ~SarB210Node() override;
 
+    // Node param `device_serial`: "" leaves device.args unchanged; otherwise args gets exactly
+    // one `serial=<s>` (an existing serial= is replaced, not duplicated).
+    static void apply_device_serial(sar::RunConfig& config, const std::string& serial);
+
     // The Start service body, callable without a ROS service round trip (tests). Refusals happen
     // here, before any radio is opened: busy, TX without the token, config/preflight errors.
     StartResult handle_start(bool transmit, const std::string& confirm, double duration_s);
@@ -108,6 +112,7 @@ private:
 
     RadioFactory radio_factory_;
     std::string config_path_;
+    std::string device_serial_;
     std::string run_root_;
     bool write_run_folder_ = true;
     bool publish_iq_ = true;

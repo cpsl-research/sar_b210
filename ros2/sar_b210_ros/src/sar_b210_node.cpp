@@ -90,6 +90,21 @@ SarB210Node::Run::Run(std::size_t depth, std::size_t slot_int16s, double hz, int
       ticks_per_sample(tps),
       publish_iq(iq) {}
 
+void SarB210Node::apply_device_serial(sar::RunConfig& config, const std::string& serial) {
+    if (serial.empty()) return;
+    // Drop any serial= already in device.args (comma-separated UHD args) so it is never duplicated.
+    std::string out;
+    std::stringstream ss(config.device.args);
+    std::string item;
+    while (std::getline(ss, item, ',')) {
+        if (item.empty() || item.rfind("serial=", 0) == 0) continue;
+        if (!out.empty()) out += ',';
+        out += item;
+    }
+    if (!out.empty()) out += ',';
+    config.device.args = out + "serial=" + serial;
+}
+
 SarB210Node::SarB210Node(const rclcpp::NodeOptions& options, RadioFactory radio_factory)
     : rclcpp::Node("sar_b210", options), radio_factory_(std::move(radio_factory)) {
     if (!radio_factory_) {
@@ -100,6 +115,7 @@ SarB210Node::SarB210Node(const rclcpp::NodeOptions& options, RadioFactory radio_
     config_path_ = declare_parameter<std::string>("config_path", "");
     run_root_ = expand_home(declare_parameter<std::string>("run_root", "b210_runs"));
     write_run_folder_ = declare_parameter<bool>("write_run_folder", true);
+    device_serial_ = declare_parameter<std::string>("device_serial", "");
     publish_iq_ = declare_parameter<bool>("publish_iq", true);
     // Sizing: the measured rate is ~65 bursts/s (32.6 sweeps/s x 2 steps), 56,000 complex int16
     // samples (224 KB) per burst, ~14.6 MB/s. 192 slots hold ~2.9 s (~43 MB with IQ).
@@ -213,6 +229,7 @@ StartResult SarB210Node::handle_start(bool transmit, const std::string& confirm,
             throw std::runtime_error("config_path parameter is not set");
         }
         config = sar::load_run_config(config_path_);
+        apply_device_serial(config, device_serial_);
     } catch (const std::exception& e) {
         out.message = std::string("config not loadable: ") + e.what();
         return out;

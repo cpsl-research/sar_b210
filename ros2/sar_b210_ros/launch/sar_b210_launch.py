@@ -24,6 +24,9 @@ ARGUMENTS = [
         'publish_queue_depth', default_value='192',
         description='bursts the publish queue holds (~65 bursts/s, 224 KB each; 192 is ~3 s)'),
     DeclareLaunchArgument(
+        'device_serial', default_value='',
+        description="B210 serial; '' keeps the config's device.args, else serial=<s> is appended"),
+    DeclareLaunchArgument(
         'namespace', default_value='',
         description='node namespace; topics are b210/... relative to it'),
 ]
@@ -43,6 +46,7 @@ def launch_setup(context, *args, **kwargs):
         parameters=[{
             'config_path': config_file,
             'run_root': LaunchConfiguration('run_root'),
+            'device_serial': ParameterValue(LaunchConfiguration('device_serial'), value_type=str),
             'write_run_folder': ParameterValue(LaunchConfiguration('write_run_folder'), value_type=bool),
             'publish_iq': ParameterValue(LaunchConfiguration('publish_iq'), value_type=bool),
             'publish_queue_depth': ParameterValue(LaunchConfiguration('publish_queue_depth'), value_type=int),

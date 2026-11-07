@@ -141,6 +141,39 @@ TEST_F(NodeTest, MissingConfigAndBadDurationAreRefused) {
     EXPECT_EQ(g_radio_opens.load(), 0);
 }
 
+std::string g_last_args;
+
+std::unique_ptr<sar::Radio> args_factory(const sar::RunConfig& c, std::shared_ptr<sar::RunLog>, bool) {
+    g_last_args = c.device.args;
+    throw std::runtime_error("test radio refuses to open");
+}
+
+TEST_F(NodeTest, DeviceSerialParamReachesRadioArgsWithoutDuplicating) {
+    const std::string cfg = std::string(SAR_SOURCE_DIR) + "/configs/default.yaml";
+    auto run = [&](const std::string& serial) {
+        rclcpp::NodeOptions opts;
+        opts.append_parameter_override("config_path", cfg);
+        opts.append_parameter_override("write_run_folder", false);
+        if (!serial.empty()) opts.append_parameter_override("device_serial", serial);
+        auto node = std::make_shared<sar_b210_ros::SarB210Node>(opts, args_factory);
+        EXPECT_TRUE(node->handle_start(false, "", 1.0).accepted);
+        node->join_worker();
+        return g_last_args;
+    };
+    const std::string base = run("");
+    EXPECT_EQ(base.find("serial="), std::string::npos);
+    EXPECT_EQ(run("3271117"), base + ",serial=3271117");
+    sar::RunConfig c;
+    c.device.args = "type=b200,serial=AAA";
+    sar_b210_ros::SarB210Node::apply_device_serial(c, "BBB");
+    EXPECT_EQ(c.device.args, "type=b200,serial=BBB");
+    sar_b210_ros::SarB210Node::apply_device_serial(c, "BBB");
+    EXPECT_EQ(c.device.args, "type=b200,serial=BBB");
+    c.device.args = "type=b200";
+    sar_b210_ros::SarB210Node::apply_device_serial(c, "");
+    EXPECT_EQ(c.device.args, "type=b200");
+}
+
 TEST_F(NodeTest, RxOnlyStartFailsCleanlyWhenRadioCannotOpen) {
     auto node = make_node(std::string(SAR_SOURCE_DIR) + "/configs/default.yaml");
     const auto r = node->handle_start(false, "", 1.0);

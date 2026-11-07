@@ -8,7 +8,7 @@ Build (the capture library is built in as a subproject; `capture/COLCON_IGNORE` 
 
     source /opt/ros/jazzy/setup.bash
     colcon build --packages-up-to sar_b210_ros     # from a workspace whose src/ holds this repo
-    ros2 launch sar_b210_ros sar_b210_launch.py [config_file:=default.yaml run_root:=~/b210_runs publish_iq:=true]
+    ros2 launch sar_b210_ros sar_b210_launch.py [config_file:=default.yaml run_root:=~/b210_runs device_serial:=3271117 publish_iq:=true]
 
 | Topic / service | Type | Notes |
 |---|---|---|
@@ -27,7 +27,7 @@ has the error): the finished session stays in RAM, `b210/start` is refused with 
 operator calls `b210/write_retry` (optionally with a path) or `b210/discard`. The session still holds
 the radio open meanwhile. Data is lost only if the node exits while held (logged).
 
-Params: `config_path`, `run_root`, `write_run_folder` (true), `publish_iq` (true),
+Params: `config_path`, `run_root`, `device_serial` (""; else `serial=<s>` is set in `device.args`), `write_run_folder` (true), `publish_iq` (true),
 `publish_queue_depth` (192 bursts, about 2.9 s at the measured 65 bursts/s of 224 KB, 43 MB).
 The burst callback copies into a preallocated lock-free ring and never blocks; a publisher thread
 drains it. A full queue drops the burst from the topic (never from the run folder) and counts it
