@@ -1,6 +1,6 @@
 # Stepped-frequency radar: a primer for sar_b210
 
-Intuition first, one number per idea, all for `configs/default.yaml`. Formulas are those of
+All numbers are for `configs/default.yaml`. Formulas are those of
 [`delay_doppler.md`](../delay_doppler.md) §5; derivations are in its §2-§4 and are not repeated here.
 Every number below is printed by `docs/figures/stepped_frequency_primer_figures.py` from `b210_sar.budget`.
 
@@ -10,7 +10,7 @@ The radar transmits a linear sweep (a chirp) of bandwidth $B$ over a time $T_c$.
 same sweep, late by the round-trip delay $\tau$. At any instant the echo is therefore at a slightly different
 frequency than what is being sent, and that difference is proportional to $\tau$ (Fig. 1). Mixing the echo with the
 transmit signal turns it into a tone; matched filtering it (what sar_b210 does, §2 of the method doc) gives a
-peak. Both say the same thing: delay maps to a frequency or a peak position, and range is $R=c\tau/2$.
+peak. Either way delay maps to a frequency or peak position, and range is $R=c\tau/2$.
 
 ![Fig. 1](../figures/fig_sfp_chirp.png)
 
@@ -61,8 +61,7 @@ alias), and the resolution is $\lambda/(2MT_s)$. A slow sweep hurts the first; a
 
 *Fig. 4. Left: $v_{amb}$ against $T_s$. Right: velocity resolution against $M$.*
 
-Default: $\lambda$ = 12.28 cm. With the measured $T_s$ below and $M$ = 64: $v_{amb}$ = ±1.00 m/s, resolution 3.1 cm/s
-(Doppler resolution 0.51 Hz).
+Default: $\lambda$ = 12.28 cm. With the measured $T_s$ below and $M$ = 64: $v_{amb}$ = ±1.00 m/s, resolution 3.1 cm/s.
 
 ## 5. The time budget: where $T_s$ comes from
 
@@ -96,9 +95,7 @@ Default: planned step 9.2 + 8.0 + 1.0 = 18.2 ms, so $T_s$ = 36.40 ms.
 **Why the measured sweep is shorter than the planned one.** The planned $T_s$ is the config's `retune_s` + wait + dwell,
 per step. The measured one is the mean step-0 to step-0 gap in `bursts.csv` of `run_20261106_155516_rx`
 (980 sweeps, σ 0.34 ms): 15.32 ms per step, 2.88 ms less than the 18.2 ms planned. Wait and dwell are set by the
-config, so the difference sits in the retune: 15.32 − 8 − 1 = 6.32 ms against the 9.2 ms in `retune_s`. Four other
-RX-only runs give 30.68-30.71 ms. `docs/design_notes.md` records a TX+RX bench run with a median tune of 6.6 ms but a median burst spacing of
+config, so the difference sits in the retune: 15.32 − 8 − 1 = 6.32 ms against the 9.2 ms in `retune_s`. `docs/design_notes.md` records a TX+RX bench run with a median tune of 6.6 ms but a median burst spacing of
 18.3 ms, which matches the plan. The repo does not explain the gap itself, so: HYPOTHESIS: every `_rx` run
-retunes RX only (TX is off), `retune_s` was measured with TX and RX together in a 20 s run and is a mean with a long tail (worst 78 ms), and the
-RX-only step is faster. The discriminating experiment is a back-to-back TX+RX and RX-only run at the default config,
-comparing `step_period_s`. Until then, treat ±1.00 m/s as the RX-only value and ±0.84 m/s as the safe planning figure.
+retunes RX only (TX is off), `retune_s` was measured with TX and RX together, and the
+RX-only step is faster. Test: back-to-back TX+RX and RX-only runs at the default config, comparing `step_period_s`. Until then, treat ±1.00 m/s as the RX-only value and ±0.84 m/s as the safe planning figure.
