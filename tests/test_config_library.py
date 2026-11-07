@@ -385,6 +385,25 @@ def test_sar_5g8_config_validates_and_budget():
         assert "waveform" in fields(check(r))
 
 
+SAR_5G8_2X30 = ROOT / "configs/sar_5g8_2x30.yaml"
+
+
+def test_sar_5g8_2x30_config_validates_and_budget():
+    c = cfgmod.load_config(SAR_5G8_2X30)
+    rep = cfgmod.validate(c)
+    assert rep.valid and not rep.warnings, rep  # includes no stitch-hole warning at the 2 MHz overlap
+    assert (c.waveform.num_steps, c.waveform.chirp_bandwidth_hz, c.waveform.step_spacing_hz) == (2, 30e6, 28e6)
+    assert (c.rf.center_freq_hz, c.permitted_band.min_hz, c.permitted_band.max_hz) == (5.845e9, 5725e6, 5875e6)
+    b = bud.compute_budget(c)
+    assert abs(b.total_bandwidth_hz - 58e6) < 1 and abs(b.sweep_time_s - 0.0364) < 5e-5
+    assert abs(b.range_resolution_m - 2.58) < 0.01 and abs(b.wavelength_m - 0.0513) < 1e-4
+    lo, hi = 5845e6 - 14e6 - 15e6, 5845e6 + 14e6 + 15e6
+    assert (lo, hi) == (5816e6, 5874e6)
+    r = copy.deepcopy(yaml.safe_load(SAR_5G8_2X30.read_text()))
+    r["rf"]["center_freq_hz"] = 5847e6  # upper edge 5876 MHz (5846 would end exactly on 5875, still allowed)
+    assert "waveform" in fields(check(r))
+
+
 def test_default_carries_separation_and_missing_field_is_rejected():
     assert cfgmod.load_config(DEFAULT).antenna.tx_rx_separation_m == 0.15
     r = raw()

@@ -319,6 +319,22 @@ void test_sar_5g8_config() {
     CHECK(has_error(out, "outside permitted_band"));
 }
 
+void test_sar_5g8_2x30_config() {
+    const RunConfig c = load_run_config(std::string(SAR_SOURCE_DIR) + "/configs/sar_5g8_2x30.yaml");
+    CHECK_NEAR(c.rf.center_freq_hz, 5.845e9, 1);
+    CHECK_NEAR(*c.permitted_band.min_hz, 5725e6, 1);
+    CHECK_NEAR(*c.permitted_band.max_hz, 5875e6, 1);
+    const ConfigReport report = validate_config(c);
+    CHECK(report.errors.empty() && report.warnings.empty());
+    const Budget b = compute_budget(c);
+    CHECK_NEAR(b.total_bandwidth_hz, 58e6, 1);  // occupied 5816-5874 MHz
+    CHECK_NEAR(b.range_resolution_m, 2.58, 0.01);
+    CHECK_NEAR(b.wavelength_m, 0.0513, 0.0001);
+    RunConfig out = c;
+    out.rf.center_freq_hz = 5847e6;  // upper edge 5876 MHz (5846 would end exactly on 5875, still allowed)
+    CHECK(has_error(out, "outside permitted_band"));
+}
+
 // ----- hardware limits (configs/hw_limits.yaml) and Python parity -----
 
 // tests/fixtures/config_parity.yaml is the table tests/test_config_library.py checks too: same configs, same
@@ -928,6 +944,7 @@ int main() {
         T(test_parser_rejects_bad_files),
         T(test_sar_first_config_and_separation),
         T(test_sar_5g8_config),
+        T(test_sar_5g8_2x30_config),
         T(test_validation_blocks_unsafe_configs),
         T(test_parity_table_matches_python),
         T(test_hw_limits_found_next_to_config_and_loaded),
