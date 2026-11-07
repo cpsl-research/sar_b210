@@ -1,0 +1,6 @@
+{
+ "comment": "Screenshot spec for the b210_sar GUI. Start the GUI (docs/tutorials/01_gui.md), then from the console repo: uv run python tools/pagecap.py --url http://127.0.0.1:8010/ --tabs configs --sizes 1280x900,390x844. Navigate and screenshot only.",
+ "url": "http://127.0.0.1:8010/",
+ "tabs": ["configs"],
+ "sizes": ["1280x900", "390x844"]
+}
