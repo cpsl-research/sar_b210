@@ -66,4 +66,4 @@ sudo python3 tools/setup/host_setup.py --apply --scope host
 
 ## Not covered
 
-Registry publishing, arm64, macOS/Windows (USB passthrough and host networking do not work through Docker Desktop), TX enablement. The `hw` profile has been config-checked; see `docs/runbook.md` for field use.
+Registry publishing, arm64, macOS/Windows (USB passthrough and host networking do not work through Docker Desktop), TX enablement. The `hw` profile was config-checked, then an RX-only container capture ran on hardware on 2026-11-07 (10 s, 651 bursts, 0 invalid, transmit false; the node started idle in the container). See `docs/runbook.md` for field use.
