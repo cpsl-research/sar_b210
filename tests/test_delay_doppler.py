@@ -344,6 +344,11 @@ def test_12_three_steps_at_15mhz():
     p = dd.Processor(cfg3, cal=true_cal(scene), pad=16, max_range_m=200)
     m = dd.delay_doppler_map(sw, processor=p)
     assert abs(dd.peak(m.ranges_m, m.map[m.zero_doppler_index], 37.3)[0] - 37.3) < 0.2
+    rp = dd.range_profile(sw[0], p)
+    w, psl, _, r = lobe_metrics(rp.ranges_m, rp.profile, 37.3)
+    assert abs(r - 37.3) < 0.2
+    assert w == pytest.approx(3.00, rel=0.05)
+    assert psl <= -30.0
 
 
 def test_missing_burst_normalises_per_step():
@@ -352,17 +357,13 @@ def test_missing_burst_normalises_per_step():
     full = dd.delay_doppler_map(sweeps_of(scene), "rect", processor=p)
     sw = sweeps_of(scene)
     s = sw[3]
-    sw[3] = dataclasses.replace(s, iq=np.where(np.array([True, False]).reshape((-1,) + (1,) * (s.iq.ndim - 1)), s.iq, 0), valid=np.array([True, False]), present=np.array([True, False]),
-                                usrp_ticks=np.array([s.usrp_ticks[0], -1]))
+    keep = np.array([True, False]).reshape((-1,) + (1,) * (s.iq.ndim - 1))
+    sw[3] = dataclasses.replace(s, iq=np.where(keep, s.iq, 0), valid=np.array([True, False]),
+                                present=np.array([True, False]), usrp_ticks=np.array([s.usrp_ticks[0], -1]))
     gap = dd.delay_doppler_map(sw, "rect", processor=p)
     a = np.abs(full.map[full.zero_doppler_index]).max()
     b = np.abs(gap.map[gap.zero_doppler_index]).max()
     assert 20 * np.log10(b / a) == pytest.approx(0.0, abs=0.3)  # w.sum() over all sweeps would give -1.2 dB
-    rp = dd.range_profile(sw[0], p)
-    w, psl, _, r = lobe_metrics(rp.ranges_m, rp.profile, 37.3)
-    assert abs(r - 37.3) < 0.2
-    assert w == pytest.approx(3.00, rel=0.05)
-    assert psl <= -30.0
 
 
 # --- derived numbers, round trip, structure -------------------------------------------------------
