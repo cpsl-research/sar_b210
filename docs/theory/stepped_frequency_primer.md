@@ -2,8 +2,8 @@
 
 All numbers are for `configs/default.yaml`. Formulas are those of
 [`docs/delay_doppler.md`](../delay_doppler.md) (the method doc) §5; derivations are in its §2-§4 and are not repeated here.
-Terms: $c$ = 299 792 458 m/s (with 3e8, $R_{amb}$ below would read 3000 m); the *carrier* is the centre of the stitched band, $f_c$ = 2441.75 MHz, and
-$\lambda=c/f_c$ = 12.28 cm is its wavelength (for a new config, use its `center_freq_hz`).
+Terms: $c$ = 299 792 458 m/s (with 3e8, $R_{amb}$ below would read 3000 m); the *carrier* is the centre of the stitched band, the midpoint of the step centres (2426.75 and 2456.75 MHz), $f_c$ = 2441.75 MHz = `center_freq_hz`, and
+$\lambda=c/f_c$ = 12.28 cm is its wavelength (for a new config, use its `center_freq_hz`, the midpoint, not step 0).
 
 ## 1. One chirp: delay becomes frequency
 
@@ -23,12 +23,12 @@ Default: $B$ = 45 MHz, $T_c$ = 20 µs: 15 kHz of beat per metre; one chirp alone
 ## 2. Stepping and stitching: more band than one chirp can carry
 
 Range resolution comes from bandwidth, and one chirp is limited to what the radio passes: complex (I/Q) baseband at
-$f_s$ = 56 MS/s covers about 56 MHz, of which the default uses 45 MHz so the filter edges stay clear. So the radar retunes its centre frequency by $\Delta f$,
+$f_s$ = 56 MS/s covers about 56 MHz, of which the default uses 45 MHz so the filter edges stay clear (guidance: keep $B\lesssim0.8f_s$; the validated limit is $B\le f_s$). So the radar retunes its centre frequency by $\Delta f$,
 sends the next chirp, and glues the sub-bands side by side in the frequency domain (Fig. 2). The occupied
 band is $B_{tot}=(N-1)\Delta f+B$. The synthesizer phase is random after every retune. The leakage (the direct TX-to-RX path, a strong echo at a known
 delay in every step) is a reference: dividing each step by its own leakage phase removes that random phase, so the pieces add coherently
 (method doc §3, stitching §4). The sub-bands overlap
-on purpose, so the band stays continuous after the weak, tapered chirp edges are discarded.
+on purpose, so the band stays continuous after the edges are discarded: the 5 % taper at each end of the chirp and any bins more than 6 dB below the peak (method doc §4). A small overlap must cover those.
 
 ![Fig. 2](../figures/fig_sfp_stitch.png)
 
@@ -49,7 +49,7 @@ warns above $\Delta f>0.9B$ (40.5 MHz here), since the discarded edges eat into 
 ![Fig. 3](../figures/fig_sfp_grating.png)
 
 *Fig. 3. Range profile of a point target, flat spectrum, no window (illustrative). Left: the default, first sidelobe −13.5 dB.
-Right: $\Delta f$ = 60 MHz, above the 40.5 MHz warning: a shoulder at −7.8 dB beside the mainlobe, near $c/(2\Delta f)$ = 2.50 m.*
+Right: $\Delta f$ = 60 MHz, above the 40.5 MHz warning: a shoulder at −7.8 dB near ±2 m ($c/(2\Delta f)$ = 2.50 m for an ideal gap).*
 
 Default: $\Delta R$ = 2.00 m, $R_{amb}$ = 2998 m, $\Delta f/B$ = 0.67 (no gaps).
 
@@ -74,9 +74,9 @@ Default, $M$ = 64: planned $T_s$ 36.40 ms gives ±0.84 m/s, 2.6 cm/s; measured 3
 
 Each step costs three things, in order: **retune** (`retune_s`: the synthesizer, the local oscillator that sets the carrier, is commanded to the new frequency and
 locks; 9.2 ms here, measured on the B210), **wait** (`settle_margin_s`: after locking, the oscillator's phase and leakage keep drifting for
-a while, so the burst is held back until it is stable; 8.0 ms, or `command_lead_s` + $T_c$ = 2.02 ms if that is longer, since the host
+a while, so the burst (one dwell of chirps at one step, one row of `bursts.csv`) is held back until it is stable; 8.0 ms, or `command_lead_s` (2.0 ms) + $T_c$ = 2.02 ms if that is longer, since the host
 issues the timed TX/RX commands that far ahead of the burst) and **dwell** (`dwell_s` = 1.0 ms: 50 chirps of 20 µs, whose average
-gains 10 log10 50 = 17 dB of signal-to-noise ratio, as noise is independent between chirps). The radar samples as `sc16` (16-bit I and Q).
+gains 10 log10 50 = 17 dB of signal-to-noise ratio, as noise is independent between chirps).
 $T_s$ is therefore **derived, not an input**: $T_s\approx N\times$(retune + wait + dwell), here 2 × 18.2 ms. A config that asks for a
 faster sweep than this arithmetic allows is inconsistent.
 
