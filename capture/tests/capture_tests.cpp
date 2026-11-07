@@ -293,6 +293,32 @@ void test_sar_first_config_and_separation() {
     CHECK(throws([&] { parse_run_config(text); }, "tx_rx_separation_m"));
 }
 
+// ----- 5.8 GHz first-SAR config (b210-33) -----
+
+void test_sar_5g8_config() {
+    const RunConfig c = load_run_config(std::string(SAR_SOURCE_DIR) + "/configs/sar_5g8_2x40.yaml");
+    CHECK_NEAR(c.rf.center_freq_hz, 5.8e9, 1);
+    CHECK(c.permitted_band.min_hz && c.permitted_band.max_hz);
+    CHECK_NEAR(*c.permitted_band.min_hz, 5725e6, 1);
+    CHECK_NEAR(*c.permitted_band.max_hz, 5875e6, 1);
+    CHECK_NEAR(*c.antenna.gain_dbi, 5.0, 1e-12);
+    const ConfigReport report = validate_config(c);
+    CHECK(report.errors.empty() && report.warnings.empty());
+    const Budget b = compute_budget(c);
+    CHECK_NEAR(b.total_bandwidth_hz, 78e6, 1);
+    CHECK_NEAR(b.sweep_time_s, 0.0364, 5e-5);
+    CHECK_NEAR(b.range_resolution_m, 1.92, 0.01);
+    CHECK_NEAR(b.wavelength_m, 0.0517, 0.0001);
+    CHECK_NEAR(b.max_avg_conducted_dbm, -6.25, 1e-9);  // -1.25 dBm EIRP - 5 dBi
+    // a centre outside 5725-5875 MHz (here the 2.4 GHz one) is refused
+    RunConfig out = c;
+    out.rf.center_freq_hz = 2441.75e6;
+    CHECK(has_error(out, "outside permitted_band"));
+    out = c;
+    out.rf.center_freq_hz = 5850e6;  // upper step edge 5889 MHz
+    CHECK(has_error(out, "outside permitted_band"));
+}
+
 // ----- hardware limits (configs/hw_limits.yaml) and Python parity -----
 
 // tests/fixtures/config_parity.yaml is the table tests/test_config_library.py checks too: same configs, same
@@ -901,6 +927,7 @@ int main() {
         T(test_default_config_is_valid),
         T(test_parser_rejects_bad_files),
         T(test_sar_first_config_and_separation),
+        T(test_sar_5g8_config),
         T(test_validation_blocks_unsafe_configs),
         T(test_parity_table_matches_python),
         T(test_hw_limits_found_next_to_config_and_loaded),

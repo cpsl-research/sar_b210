@@ -363,6 +363,28 @@ def test_sar_first_config_validates_and_budget():
     assert abs(b.total_bandwidth_hz - 78e6) < 1 and abs(b.sweep_time_s - 0.0364) < 5e-5
 
 
+SAR_5G8 = ROOT / "configs/sar_5g8_2x40.yaml"
+
+
+def test_sar_5g8_config_validates_and_budget():
+    c = cfgmod.load_config(SAR_5G8)
+    rep = cfgmod.validate(c)
+    assert rep.valid and not rep.warnings, rep
+    assert (c.rf.center_freq_hz, c.permitted_band.min_hz, c.permitted_band.max_hz) == (5.8e9, 5725e6, 5875e6)
+    assert c.antenna.gain_dbi == 5 and c.rf.rx_gain_db == 40 and c.rf.tx_gain_db == 20
+    b = bud.compute_budget(c)
+    assert abs(b.total_bandwidth_hz - 78e6) < 1 and abs(b.sweep_time_s - 0.0364) < 5e-5
+    assert abs(b.range_resolution_m - 1.92) < 0.01 and abs(b.wavelength_m - 0.0517) < 1e-4
+    assert abs(b.max_avg_conducted_dbm - (-1.25 - 5)) < 1e-9
+    assert abs(b.max_speed_lambda_over_3_mps - 0.47) < 0.01
+    lo, hi = 5800e6 - 19e6 - 20e6, 5800e6 + 19e6 + 20e6
+    assert (lo, hi) == (5761e6, 5839e6)
+    for fc in (2441.75e6, 5850e6):  # the 2.4 GHz centre and one whose upper edge passes 5875 MHz
+        r = copy.deepcopy(yaml.safe_load(SAR_5G8.read_text()))
+        r["rf"]["center_freq_hz"] = fc
+        assert "waveform" in fields(check(r))
+
+
 def test_default_carries_separation_and_missing_field_is_rejected():
     assert cfgmod.load_config(DEFAULT).antenna.tx_rx_separation_m == 0.15
     r = raw()

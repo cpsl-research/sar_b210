@@ -1,0 +1,64 @@
+# First SAR experiment: 2 steps x 40 MHz chirps, step spacing 38 MHz (78 MHz occupied, 2 MHz overlap),
+# TSA900-12000 antennas vertical, TX-RX separation 0.15 m along-track, platform at 0.15 m/s.
+# Rationale and candidate table: console docs/research/b210_stepped_chirp_sar_first_experiment.md (sections A, B).
+# Otherwise identical to default.yaml, except for the band (below).
+# 5.8 GHz variant (b210-33): the 2.4 GHz first run (b210-08 Run A) failed its stop gate because Wi-Fi
+# interference clipped bursts and leakage/noise was only 16 dB. Same waveform, moved to the 5725-5875 MHz band
+# (FCC Part 15 15.249). Timing constants below were measured at 2.4 GHz: [measure], re-check at 5.8 GHz.
+# Run configuration. Copied verbatim into every dataset as config.yaml.
+# Tags: [start] tunable default | [measure] must be measured on hardware before relying on it
+#       [owner] open question, needs an owner answer | [fixed] owner decision, ask before changing
+# Plain decimals on purpose: PyYAML reads 56e6 as a string.
+
+device:
+  args: "type=b200,num_recv_frames=512,recv_frame_size=8200"  # [start]
+  master_clock_rate_hz: 56000000                              # [start]
+  rx_timestamp_offset_ticks: 7                                # [measure] first sample tick minus commanded tick; 7 on the B210 at 56 MS/s
+
+waveform:
+  sample_rate_hz: 56000000     # [start]
+  num_steps: 2                 # [fixed] the most that fits 83.5 MHz with useful bandwidth per step
+  step_spacing_hz: 38000000    # [start] 2 MHz overlap between adjacent chirps
+  chirp_bandwidth_hz: 40000000 # [start] total occupied 78 MHz
+  chirp_length_s: 0.00002      # [start] 1120 samples at 56 MS/s
+  dwell_s: 0.001               # [start] 50 chirps
+  taper_fraction: 0.05         # [start] raised-cosine taper, as a fraction of the chirp at each edge
+  tx_amplitude: 0.7            # [start] digital scale, fraction of full scale
+
+rf:
+  center_freq_hz: 5800000000   # [fixed] middle of 5725-5875 MHz; steps 5781 and 5819 MHz, occupied 5761-5839 MHz; lambda = 5.17 cm
+  lo_offset_hz: 0              # [owner] see docs/design_notes.md
+  tx_gain_db: 20               # [measure] raise until leakage is strong, peak < 50% of full scale, never above the EIRP cap (about -6.25 dBm average conducted at 5 dBi; the user OKs any TX gain per run)
+  max_tx_gain_db: 40           # [measure] capture refuses a higher tx_gain_db; raise only after measuring conducted power
+  rx_gain_db: 40               # [measure] fixed for every step and run; no AGC
+  tx_antenna: "TX/RX"          # [fixed] channel A
+  rx_antenna: "RX2"            # [fixed] channel A
+  tx_mode: "timed_burst"       # only mode supported; keeps average power down
+
+# Capture must refuse to transmit while these are null, the sweep falls outside them, or antenna gain is null.
+permitted_band:
+  min_hz: 5725000000           # [fixed]
+  max_hz: 5875000000           # [fixed]
+  legal_basis: "FCC Part 15 15.249, 5725-5875 MHz (50 mV/m at 3 m)"  # [fixed] see docs/design_notes.md
+  max_avg_eirp_dbm: -1.25      # 50 mV/m at 3 m; average, not yet verified on hardware
+
+timing:
+  retune_s: 0.0092             # [measure] tune, lock and command overhead per step; 9.2 ms in a 20 s run on the B210
+  settle_margin_s: 0.008       # [measure] wait after LO lock; set from leakage phase stability at stage 2
+  command_lead_s: 0.002        # [measure] how far ahead of a burst its timed commands are issued
+  lock_timeout_s: 0.1          # [start]
+  clock_sync_interval_s: 1     # [start] how often USRP time is logged against host clocks
+  max_run_s: 60                # [start] sizes the RAM buffer, plus 25%; 20 m at 0.5 m/s is 40 s
+  sync_mode: "host_clock"      # [owner] pps | host_clock; depends on the autonomy stack time base
+
+antenna:
+  type: "RFspace TSA900-12000 tapered-slot PCB (0.9-12 GHz), vertical pol."  # [fixed]
+  gain_dbi: 5                  # [fixed] TSA900 datasheet 5.0 dBi at 6 GHz (conservative at 5.8 GHz); used for the EIRP check
+  beamwidth_deg: 60            # [fixed] owner value at 2.4 GHz, not re-checked at 5.8 GHz (no datasheet figure at hand; beamwidth normally narrows with frequency); sets the along-track spacing rule
+  tx_rx_separation_m: 0.15     # [measure] along-track distance between TX and RX antennas; image formation uses it
+
+platform:
+  planned_speed_mps: 0.15      # [start] limit is about 0.47 m/s (lambda/3 = 1.72 cm per 36.4 ms sweep at lambda = 5.17 cm); slower adds integration
+
+output:
+  dataset_root: null           # USB SSD mount point, set per machine
