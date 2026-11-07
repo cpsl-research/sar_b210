@@ -55,34 +55,59 @@
   </section>
   <section id="tab-configs" hidden>
     <div class="cols">
-      <div class="col list card">
-        <h2>Configurations</h2>
-        <table id="cfg-list"><thead><tr><th>name</th><th>kind</th><th>valid</th><th>sweep</th></tr></thead><tbody></tbody></table>
-        <p class="muted small" id="limits-path"></p>
-      </div>
-      <div class="col detail card">
-        <h2 id="cfg-title">Select a config</h2>
-        <div id="cfg-badges"></div>
-        <div id="cfg-body" hidden>
-          <div id="cfg-actions">
-            <button id="btn-copy" class="btn primary">Copy to new...</button>
-            <button id="btn-delete" class="danger" hidden>Delete</button>
+      <div class="col list stack">
+        <div class="card">
+          <h2>Configurations</h2>
+          <table id="cfg-list"><thead><tr><th>name</th><th>kind</th><th>valid</th><th>sweep</th></tr></thead><tbody></tbody></table>
+          <p class="muted small" id="limits-path"></p>
+        </div>
+        <div class="card" id="gen-card">
+          <h2>Generate from targets</h2>
+          <p class="muted small">Best effort: an unreachable target gives the closest config and a warning, never an error. Nothing is written until you save.</p>
+          <div id="gen-fields">
+            <label>range resolution (m) <input id="gen-rr" inputmode="decimal" value="2"></label>
+            <label>max range (m) <input id="gen-rmax" inputmode="decimal" value="300"></label>
+            <label>max velocity (m/s) <input id="gen-vmax" inputmode="decimal" placeholder="optional"></label>
+            <label>chirps per dwell <input id="gen-nchirps" inputmode="numeric" value="50"></label>
+            <label>centre freq (Hz) <input id="gen-fc" inputmode="decimal" placeholder="base"></label>
+            <label>num steps <input id="gen-nsteps" inputmode="numeric" placeholder="solve"></label>
+            <label>base config <select id="gen-base"></select></label>
           </div>
-          <form id="cfg-form" hidden>
-            <p class="muted small">Editing a copy. Fields are checked against the hardware limits (configs/hw_limits.yaml): errors block saving, warnings do not.</p>
-            <label>save as <input id="cfg-newname" placeholder="my_config" size="24"></label>
-            <div id="cfg-fields"></div>
-            <div id="cfg-formactions">
-              <button type="button" id="btn-check">Check</button>
-              <button type="button" id="btn-save" class="primary">Save as new</button>
-              <button type="button" id="btn-cancel">Cancel</button>
+          <div class="saveline"><button id="btn-gen" class="primary">Generate</button><span id="gen-msg" class="small muted"></span></div>
+          <div id="gen-result" hidden>
+            <table id="gen-table"><thead><tr><th>quantity</th><th>target</th><th>achieved</th></tr></thead><tbody></tbody></table>
+            <div id="gen-issues"></div>
+            <div class="saveline"><button id="btn-gen-load">Load result as draft</button></div>
+          </div>
+        </div>
+      </div>
+      <div class="col detail stack">
+        <div class="card">
+          <h2 id="cfg-title">Select a config</h2>
+          <div id="cfg-badges"></div>
+          <div id="cfg-body" hidden>
+            <div id="cfg-actions">
+              <button id="btn-copy" class="btn primary">Copy to new...</button>
+              <button id="btn-targets" title="Fill the Generate form with this config's range resolution, unambiguous range and velocity">Use its numbers as targets</button>
+              <button id="btn-delete" class="danger" hidden>Delete</button>
             </div>
-          </form>
-          <div id="cfg-issues"></div>
-          <h3>Derived numbers <span class="muted small" id="basis"></span></h3>
-          <div id="cfg-derived-wrap"><table id="cfg-derived"><tbody></tbody></table></div>
-          <h3>YAML <span class="muted small" id="ro-note"></span></h3>
-          <pre id="cfg-yaml"></pre>
+            <h3>Waveform construction <span class="muted small">(planned timing; redraws as you edit)</span></h3>
+            <div id="cfg-wave"></div>
+            <h3>Parameters <span class="muted small" id="ro-note"></span></h3>
+            <p class="muted small" id="form-note">Fields are checked against the hardware limits (configs/hw_limits.yaml): errors block saving unless you save anyway; warnings never do.</p>
+            <div id="cfg-fields"></div>
+            <div id="cfg-issues"></div>
+            <div class="saveline" id="cfg-saveline" hidden>
+              <label>save as <input id="cfg-newname" placeholder="my_config" size="24"></label>
+              <button type="button" id="btn-save" class="primary">Save as new</button>
+              <label id="anyway-wrap" hidden class="bad"><input type="checkbox" id="cfg-anyway"> save even with errors (flagged INVALID; capture will refuse it)</label>
+              <button type="button" id="btn-cancel">Discard draft</button>
+            </div>
+            <h3>Derived numbers <span class="muted small" id="basis"></span></h3>
+            <div id="cfg-derived-wrap"><table id="cfg-derived"><tbody></tbody></table></div>
+            <h3>YAML</h3>
+            <pre id="cfg-yaml"></pre>
+          </div>
         </div>
       </div>
     </div>

@@ -30,7 +30,7 @@ pre { background:var(--bg); border:1px solid var(--line); border-radius:6px; pad
 .ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); }
 .badge { display:inline-block; padding:1px 8px; border-radius:999px; border:1px solid var(--line); margin-right:6px; font-size:12px; }
 .badge.ok { border-color:var(--ok); } .badge.bad { border-color:var(--bad); }
-#cfg-fields { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px,1fr)); gap:6px 16px; margin:8px 0; }
+#cfg-fields { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(260px,100%),1fr)); gap:6px 16px; margin:8px 0; }
 #cfg-fields label { display:flex; justify-content:space-between; gap:8px; align-items:center; color:var(--muted); }
 #cfg-fields input { width:140px; text-align:right; }
 #cfg-formactions, #cfg-actions { display:flex; gap:8px; margin:8px 0; flex-wrap:wrap; }
@@ -49,3 +49,16 @@ canvas { max-width:100%; background:var(--bg); border:1px solid var(--line); bor
 @media (max-width:600px) { main { padding:8px; } .col.list { max-width:none; } .pill { margin-left:0; } #cfg-fields input { width:110px; } #fv-pos { width:100% !important; } }
 
 #cfg-derived-wrap { overflow-x:auto; }
+
+/* b210-25: waveform construction, generate panel */
+.marks { display:flex; gap:8px; flex-wrap:wrap; margin:4px 0 8px; }
+.mark { border:1px solid var(--line); background:var(--bg); border-radius:999px; padding:2px 10px; font-size:12px; color:var(--muted); } .mark b { color:var(--fg); font-weight:600; }
+svg.wf { display:block; background:var(--bg); border:1px solid var(--line); border-radius:6px; margin:6px 0; max-width:100%; }
+.stack { display:flex; flex-direction:column; gap:12px; }
+#gen-fields { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(230px,100%),1fr)); gap:6px 14px; margin:8px 0; }
+#gen-fields label, #cfg-fields label.ro { display:flex; justify-content:space-between; gap:8px; align-items:center; color:var(--muted); }
+#gen-fields input { width:110px; text-align:right; }
+#gen-result table td:nth-child(n+2) { text-align:right; }
+#cfg-fields input:disabled { opacity:.65; }
+.saveline { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:8px 0; }
+svg.wf { max-width:760px; } .cols > .col { min-width:0; } #cfg-derived td:first-child { word-break:break-all; }
