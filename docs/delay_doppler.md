@@ -1,6 +1,7 @@
 # Delay-Doppler from stitched stepped chirps: method
 
-Method for `b210_sar.processing.delay_doppler` (directive b210-13, Step 1). 2026-11-06.
+Method for `b210_sar.processing.delay_doppler` (directive b210-13, Step 1), revised 2026-11-06 to
+match the Step 3 code (`processing/{pulse,calibration,delay_doppler}.py`, `sim.py`).
 Parameters come from `configs/default.yaml`, `capture/src/*.cpp` and the RX-only run
 `run_20261106_155516_rx` (1959 bursts, default config). Simulated numbers and figures come from
 `docs/figures/delay_doppler_figures.py`, a noise-free numpy model.
@@ -9,85 +10,108 @@ Parameters come from `configs/default.yaml`, `capture/src/*.cpp` and the RX-only
 
 | Quantity | Value | Source |
 |---|---|---|
-| $N$, $\Delta f$, $B$ | 2, 30 MHz, 45 MHz; $f_k$ = 2426.75, 2456.75 MHz | config, bursts.csv |
+| $N$ steps, spacing $\Delta f$, chirp band $B$ | 2, 30 MHz, 45 MHz; step centres $f_k$ = 2426.75, 2456.75 MHz; band centre $f_c$ = 2441.75 MHz | config, bursts.csv |
 | $f_s$, $T_c$, $N_c$ | 56 MS/s, 20 µs, 1120 samples; up-chirp $-B/2\to+B/2$, 5 % taper | `chirp.cpp` |
 | Burst | 50 chirps (56000 samples); TX sends 51 and starts one chirp early | `make_tx_burst` |
-| $T_{step}$ / $T_s$ | 15.32 / **30.64 ms** mean (σ 0.34, max 32.82 ms); budget 18.2 / 36.40 ms | bursts.csv, `run_log.txt` |
-| $\lambda$; leakage delay $\tau_{env}$ | 12.28 cm; ≈ 159 samples (2.84 µs, cabled bench) | config, `design_notes.md` |
+| $T_{step}$ / sweep $T_s$ | 15.32 / **30.64 ms** mean (σ 0.34, max 32.82 ms); budget 18.2 / 36.40 ms | bursts.csv, `run_log.txt` |
+| $\lambda$; baseband latency $\tau_{sys}$ | 12.28 cm; ≈ 159 samples (2.84 µs), the leakage peak on the cabled bench | config, `design_notes.md` |
 
 ## 2. Signal model
 
-The 50 chirps of burst $m$ (step $k$, time $t_{m,k}$) are averaged, for 17 dB of gain. The result
-is transformed on $f=n\,\delta f$, $\delta f=f_s/N_c$ = 50 kHz, and multiplied by $X^*(f)$:
+Burst $(m,k)$ is sweep $m$, step $k$, starting at USRP time $t_{m,k}$. Its 50 chirps are averaged
+(17 dB gain), transformed on $f=n\,\delta f$ ($n=-560\dots559$, $\delta f=f_s/N_c$ = 50 kHz) and
+multiplied by $X^*(f)$, where $X(f)$ is the DFT of the transmitted replica (`chirp_replica.cf32`,
+`chirp.generate_chirp`):
 
-$$Y_{m,k}(f) = |X(f)|^2\, e^{j\phi_{m,k}}\, e^{-j2\pi f\tau_{sys}} \sum_i a_i\, e^{-j2\pi (f_k+f)\,\tau_i(t_{m,k})}.$$
+$$Y_{m,k}(f) = |X(f)|^2\, e^{j\phi_{m,k}}\, e^{-j2\pi f\tau_{sys}} \sum_i a_i\, e^{-j2\pi \nu\,\tau_i(t_{m,k})},\qquad \nu=f_k+f .$$
 
-- $\tau_i$ is the bistatic path divided by $c$, so $R=c\tau/2$. A closing speed $v$ gives
-  $\tau_i(t)=\tau_{i0}-2vt/c$ and $f_D=2vf_k/c$.
-- $\tau_{sys}$ is baseband latency, which shifts the envelope only.
-- $\phi_{m,k}$ is the TX-RX synthesizer phase. It is random after every retune: consecutive bursts
-  spread by about 100°.
-- The leakage is the term with delay $\tau_L$ (antenna separation divided by $c$).
+- Path $i$ has complex amplitude $a_i$ and delay $\tau_i$ = bistatic path / $c$, so $R=c\tau/2$. A
+  closing speed $v$ gives $\tau_i(t)=\tau_{i0}-2vt/c$ and $f_D=2v/\lambda$. $\nu$ is the absolute RF
+  frequency of bin $n$.
+- The leakage is the path with $a_L$, $\tau_L$ = antenna separation / $c$: 1–10 ns (0.06–0.56
+  samples) for 0.3–3 m. Its peak sits at $\tau_{env}=\tau_{sys}+\tau_L$, so $\tau_{env}\approx\tau_{sys}$.
+- $\tau_{sys}$ shifts the envelope only. $\phi_{m,k}$ is the TX-RX synthesizer phase, random
+  after every retune (consecutive bursts spread by about 100°).
+- $y_{m,k}(\tau)=\frac1{N_c}\sum_{f\ne0}Y_{m,k}(f)\,e^{+j2\pi f\tau}$ is the compressed pulse at any,
+  also fractional, delay $\tau$.
 
-Matched filtering runs at full rate rather than by dechirp, so there is no residual video phase.
-LFM range-Doppler coupling (7 ps) and Doppler within a dwell (< 0.01 dB) are negligible. Circular
+Matched filtering runs at full rate, not by dechirp, so there is no residual video phase. LFM
+range-Doppler coupling (7 ps) and Doppler within a dwell (< 0.01 dB) are negligible. Circular
 compression is exact for $\tau+\tau_{sys}\le T_c$, because the TX lead keeps the RX window in
 steady state.
 
 ## 3. Removing the per-step LO phase
 
-$\phi_{m,k}$ changes on every retune, so no stored calibration can predict it. Every burst needs
-an in-burst reference: the leakage, or the outline's cabled reference on channel B.
+$\phi_{m,k}$ changes on every retune, so no stored calibration predicts it; every burst is
+referenced to its own leakage (or, later, the outline's cabled reference on channel B):
 
 $$Z_{m,k}(f) = \frac{Y_{m,k}(f)}{c_{m,k}}\, e^{+j2\pi f\tau_{env}}\, e^{-j2\pi(f_k-f_c+f)\tau_L},
-\qquad c_{m,k}=y_{m,k}(\tau_{env}),\ \ \tau_{env}=\tau_{sys}+\tau_L .$$
+\qquad c_{m,k}=\frac{y_{m,k}(\tau_{env})}{E_X},\ \ E_X=\tfrac1{N_c}\textstyle\sum_{f\ne0}|X|^2 .$$
 
-$c_{m,k}$ is the compressed pulse at the leakage peak. Dividing by it leaves
-$Z\propto|X|^2\sum_i(a_i/a_L)e^{-j2\pi(f_k+f)\tau_i}$, which is consistent across steps.
+$c_{m,k}$ is $y$ evaluated at the fractional $\tau_{env}$ by the direct sum above (exact
+band-limited interpolation, no upsampling). It equals $a_Le^{j\phi_{m,k}}e^{-j2\pi f_k\tau_L}$
+(plus other returns' sidelobes at $\tau_{env}$), so $Z\propto(a_i/a_L)|X|^2e^{-j2\pi\nu\tau_i}$ up to one constant: consistent across steps.
 
-- **The envelope reference must be fractional.** An error $\delta$ creates a phase jump
-  $2\pi\Delta f\delta$ at the junction. PSL versus $\delta$: Appendix A. Fit
-  $\tau_{env}$ once per run, from the band phase slope of the averaged, normalized leakage.
-- **Sign.** Under this model the $\tau_L$ correction is $e^{-j2\pi\nu\tau_L}$. The model follows
-  the outline's backprojection kernel $e^{+j2\pi fR/c}$. The outline (p. 6) and the `apply_tau_leak`
-  docstring write $e^{+j2\pi f_k\tau_{leak}}$. When the correction is applied over the full
-  $\nu=f_k+f$, a wrong sign only shifts the range axis by $c\tau_L$; test 4 pins the sign.
+- **$\tau_{env}$ is fitted once per run** (`fit_leakage_cal`) on static bursts: maximise
+  $\sum_m|y_m(\tau)|^2$, on an 8× zero-padded grid, then golden-section to $10^{-6}$ sample. Only
+  magnitudes enter, so $\phi$ needs no prior removal; the leakage must be the strongest return in
+  the search window. Sim error: 0.0014 samples.
+- **It must be fractional.** An error $\delta$ puts a phase jump $2\pi\Delta f\delta$ at the
+  junction; rounding to 160 samples raises PSL by 12.6 dB (Appendix A.1, test B6).
+- **Sign of the $\tau_L$ term (resolved in Step 3).** Dividing by $c$ leaves
+  $e^{-j2\pi\nu(\tau_i-\tau_L)}$, range measured from the leakage; $e^{-j2\pi(f_k-f_c+f)\tau_L}$
+  restores $\tau_i$. The outline (p. 6) writes $e^{+j2\pi f_k\tau_{leak}}$, which is wrong under this
+  model. Test B4 (3 m leakage, target at 37.3 m): this sign gives 37.300 m, the outline's 34.300 m,
+  no term 35.801 m. Sim and code share the model; a corner reflector at a surveyed range confirms it
+  on hardware (b210-17).
 
-`calibration.py` holds only static terms: the leakage window, $\tau_{env}$, $\tau_L$ (from the
-antenna separation or a corner reflector), and `phase_only`. $c_{m,k}$ is computed per burst. For
-RX-only runs, which have no leakage, set $c=1$.
+`calibration.LeakageCal` holds only static terms: $\tau_{env}$; $\tau_L$, from the antenna
+separation or fitted on a corner reflector (`estimate_tau_leak`); and `phase_only`, which divides by
+$c/|c|$, removing $\phi$ but keeping amplitudes in counts instead of $a_i/a_L$. RX-only runs (TX
+off) have no leakage and so no reference: `cal=None` skips this section ($Z=Y$), the steps do not
+add coherently, and such runs serve only for noise floor and timing.
 
 ## 4. Stitching
 
 ![Fig. 1](figures/fig_stitch.png)
 
-*Fig. 1. (a) Each step's $|X|^2$ at its RF offset; the overlap is split at its midpoint.
-(b) Point target at 40 m with a 100° LO-phase difference between the steps.*
+*Fig. 1. (a) The implemented chain. (b) Each step's $|X|^2$ on the stitched grid (top axis: RF
+offset). (c) Point target at 40 m, 100° LO-phase difference between the steps, 0.3 m leakage.*
 
 Use **frequency-domain concatenation** [`wilkinson1998`; `lord1997`; `nel2002`]. Time-domain
-synthesis reconstructs the same band, but it must upsample and frequency-shift every pulse, which
-Lord [`lord2000`] found inefficient. $Z_{m,k}$ goes to bins $n+(f_k-f_c)/\delta f$ (±300), which
-needs $\Delta f/\delta f$ to be an integer (here 600).
+synthesis reconstructs the same band but must upsample and frequency-shift every pulse, which Lord
+[`lord2000`] found inefficient. Step $k$'s bin $n$ goes to grid bin $g=n+(f_k-f_c)/\delta f$, i.e.
+$n-300$ for step 0 and $n+300$ for step 1 (Fig. 1b); `Processor` raises `ValueError` unless
+$\Delta f/\delta f$ is an integer (here 600). Per step:
 
-**Overlap.** The 15 MHz overlap is split at its midpoint, so each bin comes from one step. Adding
-the overlap causes ripple [`yuan2009`]. Here, summing without equalizing gives 3.48 m and -25.9 dB.
-The kept bins are those where $|X|^2>-6$ dB, which drops the taper skirts, equalized by $1/|X|^2$.
-Each step's DC bin is zeroed, because its phase is random after normalization and it would smear
-across Doppler. Then one Hann window is applied (numpy has no Taylor) and the IFFT is zero-padded
-at least 4×.
+1. Keep bins with $|X|^2$ above −6 dB of its peak (drops the taper skirts).
+2. Split the 15 MHz overlap at its midpoint, so each $g$ comes from one step. Summing the overlap
+   causes ripple [`yuan2009`]: 3.48 m, −26.0 dB here.
+3. Equalize by $1/|X|^2$.
+4. **DC bin** (step centre): its own value is never used, since a DC offset with random phase per
+   burst would smear across Doppler. By default (`dc="interpolate"`) it is replaced by the mean of
+   its two equalized neighbours, whose phases differ by $2\pi\delta f\tau$ (0.08 rad at 37 m).
+   Zeroing it (the original plan, still `dc="zero"`) is a missing spectral line: a −54.6 dB floor (Hann) under
+   the leakage, which held a target 20 dB below the leakage to PSL −29.1 dB. Interpolating gives
+   −75.7 dB and −31.5 dB.
+
+Then one window (Hann default; Hamming or rect) spans the whole stitched support, the lowest to the
+highest kept $g$ (≈ 75 MHz), and the IFFT is zero-padded ≥ 4×.
 
 ## 5. Resolution, sidelobes, ambiguities (formulas for b210-11)
 
 | Quantity | Formula | Default |
 |---|---|---|
-| Band, resolution | $B_{tot}=(N-1)\Delta f+B$; $\Delta R=c/(2B_{tot})$; one step $c/(2B)$ | 75 MHz; 2.00 m; 3.33 m |
-| -3 dB width / PSL (sim) | Hann 3.00 m / -32.0 dB; rect 1.85 m / -13.3 dB; one step, Hann 5.08 m | [`harris1978`] |
+| Band; nominal resolution | $B_{tot}=(N-1)\Delta f+B$; $\Delta R=c/(2B_{tot})$; one step $c/(2B)$ | 75 MHz; 2.00 m; 3.33 m |
+| Measured −3 dB width / PSL (figure script; Fig. 1c) | stitched: Hann 3.00 m / −31.5 dB, rect 1.85 m / −13.3 dB; one step, Hann 5.08 m | [`harris1978`] |
 | Range ambiguity | $c/(2\delta f)=cT_c/2$; steady state $R<c(T_c-\tau_{sys})/2$ | 2998 m; ≈ 2.57 km |
-| Doppler bin, resolution | $f_D=2v/\lambda$; bin $=f_DM\bar T_s \bmod M$; $1/(M\bar T_s)$ | 0.51 Hz at $M$=64 |
-| Velocity span, resolution | $\pm\lambda/(4\bar T_s)$; $\lambda/(2M\bar T_s)$ | ±1.00 m/s; 3.1 cm/s |
+| Doppler axis, resolution | $f_D=j/(M\bar T_s)$, $j=-M/2\dots M/2-1$; $1/(M\bar T_s)$ | 0.51 Hz at $M$=64 |
+| Velocity span, resolution | $v_{amb}=\pm\lambda/(4\bar T_s)$; $\lambda/(2M\bar T_s)$ | ±1.00 m/s; 3.1 cm/s |
 
-There are no grating lobes at $c/(2\Delta f)$ = 5 m, because the sub-bands are contiguous.
-$\bar T_s$ is the mean sweep period of the CPI, taken from the timestamps. **For b210-11:**
+$\Delta R$ is the window-free figure; the Hann mainlobe is 1.5× wider. A target at closing speed
+$v$ lands in Doppler bin $j=\mathrm{round}(2vM\bar T_s/\lambda)$, wrapped into $-M/2\dots M/2-1$
+when $|v|>v_{amb}$. There are no grating lobes at $c/(2\Delta f)$ = 5 m, because the sub-bands are
+contiguous. $\bar T_s$ is the CPI's mean sweep period from the timestamps. **For b210-11:**
 `compute_budget` uses `retune_s` = 9.2 ms and reports 36.40 ms (±0.84 m/s, 2.6 cm/s).
 
 ## 6. Target motion
@@ -97,49 +121,33 @@ $\bar T_s$ is the mean sweep period of the CPI, taken from the timestamps. **For
 *Fig. 2. Loss at the mid-CPI range. Each burst has its own range, timestamp (σ 0.34 ms) and LO
 phase. M = 64, Hann in range and Doppler.*
 
-When each sweep is stitched first, step $k$ carries an extra $2\pi f_DkT_{step}$. The loss is
-about $\cos(\pi f_DT_{step})$: -0.7 dB at 0.5 m/s and -3.3 dB at 1 m/s. **Transform Doppler
-first**, at each burst's own time:
+Stitching each sweep first and transforming over sweeps at the sweep time leaves step $k$, recorded
+$kT_{step}$ later, with an extra $2\pi f_DkT_{step}$. The loss is about $\cos(\pi f_DT_{step})$:
+−0.7 dB at 0.5 m/s, −3.3 dB at 1 m/s. **The code transforms Doppler first** (Fig. 1a): $Z$ is
+stacked as $M$ sweeps × $N$ steps × $N_c$ bins and each step is transformed at its own burst times,
 
-$$D_k(f_D)=\sum_m w_m\,Z_{m,k}\,e^{-j2\pi f_D (t_{m,k}-\bar t)},\qquad f_D=j/(M\bar T_s),$$
+$$D_k(f_D,f)=\frac{\sum_m w_m\,Z_{m,k}(f)\,e^{-j2\pi f_D (t_{m,k}-\bar t)}}{\sum_m w_m},$$
 
-then stitch per Doppler bin. The loss stays under
-0.2 dB up to $v_{amb}$, at about 12 M complex MACs per $M$ = 64 map.
+with $w_m$ the slow-time window (Hann default, 0 for a missing burst) and $\bar t$ the mean time of
+the CPI's valid bursts. Since $Z_{m,k}\propto e^{-j2\pi\nu\tau_i(\bar t)}e^{+j2\pi\nu(2v/c)(t_{m,k}-\bar t)}$,
+the matching $f_D$ cancels the second factor in every step, up to the $\nu/f_c$ scaling (±1.5 %).
+Each $D_k$ then carries the phase of a static target at $\tau_i(\bar t)$, and each $f_D$ row is
+stitched as in §4 with no further correction. The per-burst $t_{m,k}$ is the step compensation: it
+removes $2\pi f_DkT_{step}$ exactly. Loss stays under 0.2 dB up to $v_{amb}$, for
+$64^2\times2\times1120\approx9$ M complex MACs per map.
 
 What is ignored:
 
-- **Aliasing.** When $|v|>v_{amb}$, the step compensation is wrong by $2\pi T_{step}/\bar T_s$
-  (π for $N=2$), which splits the lobe.
-- **Range walk over the CPI** [`perry1999`], and the matching $\nu/f_c$ Doppler scaling (±1.5 %).
-  Both are negligible while $M\le\Delta R/(2|v|\bar T_s)$: 32 at 1 m/s, 65 at 0.5 m/s. See
+- **Aliasing.** When $|v|>v_{amb}$ the target appears at $f_D-p/\bar T_s$, and the step
+  compensation is off by $2\pi p\,kT_{step}/\bar T_s$ (π for $N=2$, $p=1$), which splits the lobe.
+- **Range walk over the CPI** [`perry1999`], and the $\nu/f_c$ Doppler scaling. Both are
+  negligible while $M\le\Delta R/(2|v|\bar T_s)$: 32 at 1 m/s, 65 at 0.5 m/s. See
   [`wehner1995`, ch. 5] for stepped-frequency velocity effects.
-- **Zero Doppler.** Leakage and static clutter sit at $f_D=0$. `remove_static_clutter` is a
+- **Zero Doppler.** Leakage and static clutter sit at $f_D=0$. `remove_static=True`
+  (`remove_static_clutter`) subtracts each step's mean $Z$ over the CPI before the Doppler DFT; a
   display toggle, off by default.
 
-Other configurations ($N\neq2$): Appendix A.
-
-## 8. Test list for Step 3
-
-Noise-free unless stated. The sim uses random $\phi_{m,k}$, $\tau_{sys}$ = 159.3 samples, and a
-leakage path of 3 m.
-
-1. `generate_chirp` against `chirp_replica.cf32`: maximum error ≤ 3e-5.
-2. `average_chirps`: 50 periods return the pulse; with noise, SNR gain is 17 ± 0.5 dB.
-3. `range_compress`: a delay of $d$ samples peaks at $d\times$upsample.
-4. Stationary target at 37.3 m: peak within 0.2 m, zero-Doppler bin. A wrong $\tau_L$ sign gives
-   34.3 m.
-5. Random against coherent LO phase: peak loss < 0.1 dB noise-free, < 1 dB at 20 dB SNR; PSL
-   ≤ -30 dB.
-6. Negative control: an integer-rounded $\tau_{env}$ raises PSL by > 10 dB.
-7. -3 dB width (Hann): 3.00 m ± 5 % stitched, 5.08 m ± 5 % for one step.
-8. Two equal targets 3.0 m apart (rect) or 5.0 m apart (Hann): the stitched profile dips ≥ 1.5 dB
-   at all 13 relative phases, and one step fails at some phase. Targets exactly $c/(2B_{tot})$
-   apart are not reliably resolved under any window.
-9. Target at 0.5 m/s, $M$ = 64: Doppler bin within ½ bin of $2vM\bar T_s/\lambda$; loss < 0.5 dB.
-10. Test 9 repeated with the real `usrp_time_s` of `run_20261106_155516_rx`.
-11. Leakage sits at $c\tau_L/2$ in the zero-Doppler bin. A DC offset with random per-burst phase
-    stays ≤ noise + 1 dB off zero Doppler.
-12. A non-integer $\Delta f/\delta f$ raises `ValueError`; $N$ = 3 at 15 MHz passes tests 4 and 7.
+Other configurations ($N\neq2$): Appendix A.2. Tests: Appendix B.
 
 ## Confidence
 
@@ -156,7 +164,8 @@ their abstracts, and Wehner and Levanon at chapter level.
 
 ### A.1 Envelope-error PSL (from §3)
 
-Simulated PSL is -29 dB at 0.02 samples, -25.7 dB at 0.05, and -13.4 dB at 0.3 samples, which is what rounding to 159 gives.
+Simulated PSL (figure script, no leakage lobe) is −29 dB at 0.02 samples, −25.7 dB at 0.05, and
+−13.4 dB at 0.36 samples (0.3 m leakage, $\tau_{env}$ = 159.36 rounded to 159).
 
 ### A.2 Other configs
 
@@ -164,10 +173,34 @@ For any $N$: $f_k=f_c+(k-\tfrac{N-1}{2})\Delta f$, and the split points fall mid
 adjacent step centres.
 
 - **Raise an error** if $\Delta f/\delta f$ is not an integer.
-- **Warn** if $\Delta f>0.9B$: the spectral gaps give grating lobes at multiples of $c/(2\Delta f)$
+- **Warn** if $\Delta f>0.9B$ (40.5 MHz here): the spectral gaps give grating lobes at multiples of $c/(2\Delta f)$
   [`levanon2004`; `wehner1995`].
 - $\bar T_s\approx NT_{step}$, so $v_{amb}\propto1/N$.
 - The envelope tolerance is $\delta\lesssim10°/(360°\,\Delta f)$.
+
+## Appendix B: test list (Step 3, `tests/test_delay_doppler.py`)
+
+Noise-free unless stated. The sim uses random $\phi_{m,k}$, $\tau_{sys}$ = 159.3 samples and a 3 m
+leakage path ($\tau_L$ = 10.0 ns, $\tau_{env}$ = 159.86 samples, fitted).
+
+1. `generate_chirp` against `chirp_replica.cf32`: maximum error ≤ 3e-5.
+2. `average_chirps`: 50 periods return the pulse; with noise, SNR gain is 17 ± 0.5 dB.
+3. `range_compress`: a delay of $d$ samples peaks at $d\times$upsample; $\tau_{env}$ fit < 0.01 samples.
+4. Stationary target at 37.3 m: peak within 0.2 m, zero-Doppler bin. Opposite $\tau_L$ sign: 34.3 m.
+5. Random against coherent LO phase: peak loss < 0.1 dB noise-free, < 1 dB at 20 dB SNR; target
+   20 dB below the leakage, PSL ≤ −30 dB.
+6. Negative control: $\tau_{env}$ rounded to an integer raises PSL by > 10 dB.
+7. −3 dB width (Hann): 3.00 m ± 5 % stitched, 5.08 m ± 5 % for one step.
+8. Two equal targets 3.0 m apart (rect) or 5.0 m apart (Hann): the stitched profile dips ≥ 1.5 dB
+   at all 13 relative phases, and one step fails at some phase. Targets exactly $c/(2B_{tot})$
+   apart are not reliably resolved under any window.
+9. Target at 0.5 m/s, $M$ = 64: Doppler bin within ½ bin of $2vM\bar T_s/\lambda$; loss < 0.5 dB.
+10. Test 9 repeated with the real `usrp_time_s` of `run_20261106_155516_rx`.
+11. Leakage sits at $c\tau_L/2$ = 1.5 m in the zero-Doppler bin. A 3000-count DC offset with random
+    per-burst phase stays ≤ noise + 1 dB off zero Doppler.
+12. $\Delta f$ = 30.01 MHz (non-integer $\Delta f/\delta f$) raises `ValueError`. $N$ = 3 at
+    $\Delta f$ = 15 MHz (again $B_{tot}$ = 75 MHz; heavy overlap, far below the $0.9B$ gap warning of
+    A.2) passes tests 4 and 7.
 
 ## Sources
 

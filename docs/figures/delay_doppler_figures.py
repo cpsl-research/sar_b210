@@ -2,13 +2,15 @@
 
 Noise-free numpy model of the default config (2 steps, 30 MHz spacing, 45 MHz chirps,
 56 MS/s, 1120-sample chirp, 5 % taper). It is a check of the memo's formulas, not the Step 3
-implementation. Run with any python that has numpy + matplotlib (the sar_b210 venv has no
+implementation, but it follows its choices (-6 dB keep, midpoint split, 1/|X|^2, DC bin replaced
+by the mean of its equalized neighbours, one Hann window over the stitched support). Run with any python that has numpy + matplotlib (the sar_b210 venv has no
 matplotlib on purpose):
 
     python3 docs/figures/delay_doppler_figures.py
 
-Writes fig_stitch.png and fig_motion.png next to this file and prints the numbers the memo
-quotes (mainlobe width, PSL, peak loss).
+Writes fig_stitch.png (processing chain, sub-bands, profiles) and fig_motion.png next to this
+file, prints the numbers the memo quotes (mainlobe width, PSL, peak loss), and checks that no
+annotation overlaps a plotted curve or leaves its box.
 """
 
 from __future__ import annotations
@@ -78,8 +80,13 @@ def normalize(ys, ys_leak, tau_env, tau_l=TAU_L):
     return out
 
 
-def stitch(zs, window="hann", split=True, equalize=True):
-    """Frequency-domain concatenation on the 50 kHz grid; returns (nu_bins, spectrum)."""
+def _dc_fill(val):
+    """Equalized DC-bin value: mean of the equalized bins -1 and +1 (Step 3 default dc="interpolate")."""
+    return 0.5 * (val[KB == -1][0] + val[KB == 1][0])
+
+
+def stitch(zs, window="hann", split=True, equalize=True, dc="interpolate"):
+    """Frequency-domain concatenation on the 50 kHz grid; returns (grid bins g, spectrum)."""
     step_bins = np.rint(OFFS / DELTA_F).astype(int)
     lo, hi = step_bins[0] + KB.min(), step_bins[-1] + KB.max()
     nu = np.arange(lo, hi + 1)
@@ -94,6 +101,8 @@ def stitch(zs, window="hann", split=True, equalize=True):
             keep &= (nu_idx < mid) if k == 0 else (nu_idx >= mid)
         val = z / x2 if equalize else z / x2.max()
         np.add.at(s, nu_idx[keep] - lo, val[keep])
+        if dc == "interpolate":
+            s[step_bins[k] - lo] += _dc_fill(val)
     support = np.abs(s) > 0
     i0, i1 = np.flatnonzero(support)[[0, -1]]
     w = np.zeros(nu.size)
@@ -107,7 +116,10 @@ def single_step(z, window="hann"):
     keep = (x2 > 0.25 * x2.max()) & (KB != 0)
     order = np.argsort(KB)
     nu = KB[order]
-    s = np.where(keep, z / x2, 0)[order]
+    val = z / x2
+    s = np.where(keep, val, 0)
+    s[KB == 0] = _dc_fill(val)
+    s = s[order]
     i0, i1 = np.flatnonzero(np.abs(s) > 0)[[0, -1]]
     w = np.zeros(nu.size)
     w[i0 : i1 + 1] = np.hanning(i1 - i0 + 1) if window == "hann" else 1
@@ -147,6 +159,86 @@ def metrics(r, p, r0):
     return r[b] - r[a], db[win].max(), r[i], p[i]
 
 
+CHAIN = [  # (row, col, text): the Step 3 processing chain, per burst (row 0) and per CPI (row 1)
+    (0, 0, "burst $(m,k)$: IQ,\n50 chirps x 1120"),
+    (0, 1, "average the\n50 chirps (+17 dB)"),
+    (0, 2, "FFT, multiply by $X^*(f)$\n$\\to Y_{m,k}(f)$"),
+    (0, 3, "divide by $c_{m,k}$;\nshift by $\\tau_{env}$, $\\tau_L$\n$\\to Z_{m,k}(f)$"),
+    (1, 0, "stack $M$ sweeps:\n$Z$ is $M\\times N\\times 1120$"),
+    (1, 1, "Doppler DFT over $m$\nper step, at $t_{m,k}$\n$\\to D_k(f_D,f)$"),
+    (1, 2, "stitch each $f_D$ row:\nsplit, $1/|X|^2$,\nDC fill, Hann"),
+    (1, 3, "zero-padded IFFT\n$\\to$ map($f_D$, $R$)"),
+]
+BOX_W, BOX_H, GAP = 0.215, 0.40, 0.045
+
+
+def _box_xy(row, col):
+    return 0.0 + col * (BOX_W + GAP), 0.55 - row * 0.55   # lower-left corner (axes coords)
+
+
+def draw_chain(ax):
+    """Panel (a): block diagram of the processing chain."""
+    from matplotlib.patches import FancyBboxPatch
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.axis("off")
+    for row, col, text in CHAIN:
+        x, y = _box_xy(row, col)
+        face = "#eaf2fb" if row == 0 else "#fdf0e9"
+        ax.add_patch(FancyBboxPatch((x, y), BOX_W, BOX_H, boxstyle="round,pad=0.005,rounding_size=0.02",
+                                    fc=face, ec=COLORS[row], lw=1.2))
+        ax.text(x + BOX_W / 2, y + BOX_H / 2, text, ha="center", va="center", fontsize=7.5, color=INK)
+        if col < 3:
+            ax.annotate("", xy=(x + BOX_W + GAP, y + BOX_H / 2), xytext=(x + BOX_W, y + BOX_H / 2),
+                        arrowprops=dict(arrowstyle="-|>", color=INK, lw=1))
+    x3, y3 = _box_xy(0, 3)
+    x0, y0 = _box_xy(1, 0)
+    ymid = (y3 + y0 + BOX_H) / 2
+    ax.plot([x3 + BOX_W / 2, x3 + BOX_W / 2, x0 + BOX_W / 2], [y3, ymid, ymid], color=INK, lw=1)
+    ax.annotate("", xy=(x0 + BOX_W / 2, y0 + BOX_H), xytext=(x0 + BOX_W / 2, ymid),
+                arrowprops=dict(arrowstyle="-|>", color=INK, lw=1))
+
+
+def check_layout(fig, name):
+    """Fail loudly if any text (incl. legends) overlaps a plotted curve, or a chain label leaves its box."""
+    from matplotlib.legend import Legend
+    from matplotlib.patches import FancyBboxPatch
+    fig.canvas.draw()
+    r = fig.canvas.get_renderer()
+    for ax in fig.axes:
+        pts = []
+        ab = ax.get_window_extent(r)
+        for ln in ax.get_lines():
+            if ln.get_gid() == "ref":               # reference lines (axvline/axhline) may sit under labels
+                continue
+            xy = ax.transData.transform(np.column_stack(ln.get_data()))
+            if len(xy) > 1:                       # densify so a box between two vertices is caught
+                xy = np.concatenate([np.linspace(a, b, 20) for a, b in zip(xy[:-1], xy[1:])])
+            pts.append(xy)
+        pts = np.concatenate(pts) if pts else np.zeros((0, 2))
+        pts = pts[(pts[:, 0] >= ab.x0) & (pts[:, 0] <= ab.x1) & (pts[:, 1] >= ab.y0) & (pts[:, 1] <= ab.y1)]
+        boxes = [p.get_window_extent(r) for p in ax.patches if isinstance(p, FancyBboxPatch)]
+        arts = list(ax.texts) + [c for c in ax.get_children() if isinstance(c, Legend)]
+        for t in arts:
+            bb = t.get_window_extent(r)
+            hit = (pts[:, 0] > bb.x0) & (pts[:, 0] < bb.x1) & (pts[:, 1] > bb.y0) & (pts[:, 1] < bb.y1)
+            if hit.any() and ax.axison:
+                raise SystemExit(f"{name}: '{getattr(t, 'get_text', lambda: 'legend')()}' overlaps a curve")
+            if boxes and t.get_text().count("\n") >= 1:
+                if not any(b.x0 <= bb.x0 and bb.x1 <= b.x1 and b.y0 <= bb.y0 and bb.y1 <= b.y1 for b in boxes):
+                    raise SystemExit(f"{name}: chain label '{t.get_text()[:30]}' leaves its box")
+    labels = []                                    # titles, axis labels, texts, legends must not collide
+    for ax in fig.axes + [c for ax in fig.axes for c in getattr(ax, "child_axes", [])]:
+        labels += [t for t in (ax.title, ax.xaxis.label, ax.yaxis.label, *ax.texts) if t.get_text()]
+        labels += [c for c in ax.get_children() if isinstance(c, Legend)]
+    ext = [t.get_window_extent(r) for t in labels]
+    for i in range(len(ext)):
+        for j in range(i + 1, len(ext)):
+            if ext[i].overlaps(ext[j]):
+                raise SystemExit(f"{name}: labels {i} and {j} overlap")
+    print(f"{name}: layout check passed")
+
+
 def fig_stitch(rng):
     r0 = 40.0
     tgt = [(1.0, 2 * r0 / C)]
@@ -175,22 +267,31 @@ def fig_stitch(rng):
     w, psl, *_ = metrics(r_rect, p_rect, r0)
     print(f"stitched, rectangular | {w:.2f} | {psl:.1f}")
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7.2, 6.4), gridspec_kw={"height_ratios": [1, 1.6]})
+    fig, (ax0, ax1, ax2) = plt.subplots(3, 1, figsize=(7.2, 9.8), gridspec_kw={"height_ratios": [1.05, 1, 1.6]})
+    draw_chain(ax0)
+    ax0.set_title("(a) Processing chain (Step 3 code): blue per burst, orange per CPI of $M$ sweeps", fontsize=10, loc="left")
     x2 = np.abs(X) ** 2
     o = np.argsort(F)
+    g_k = OFFS / DELTA_F                                   # grid bin of each step centre (-300, +300)
     for k in range(2):
-        ax1.plot((OFFS[k] + F[o]) / 1e6, 10 * np.log10(x2[o] / x2.max()), color=COLORS[k], lw=2, label=f"step {k}: $|X(f)|^2$ at $f_c{OFFS[k]/1e6:+.0f}$ MHz")
-        ax1.axvline(OFFS[k] / 1e6, color=COLORS[k], lw=1, ls=":")
-    ax1.axvspan(-7.5, 7.5, color=MUTED, alpha=0.15, lw=0)
-    ax1.axvline(0, color=INK, lw=1, ls="--")
-    ax1.text(0.4, -17, "overlap 15 MHz\nsplit at midpoint", fontsize=8, color=INK)
-    ax1.text(16, -9, "dotted: step centres =\nDC of each step (zeroed)", fontsize=8, color=INK)
-    ax1.set_xlim(-42, 42)
+        ax1.plot(KB[o] + g_k[k], 10 * np.log10(x2[o] / x2.max()), color=COLORS[k], lw=2,
+                 label=f"step {k}: $|X(f)|^2$, centre $f_k$ at grid bin {g_k[k]:+.0f}")
+        ax1.axvline(g_k[k], color=COLORS[k], lw=1, ls=":", gid="ref",
+                    label=f"step {k} centre = its DC bin (filled from neighbours)")
+    ax1.axvspan(-150, 150, color=MUTED, alpha=0.15, lw=0)
+    ax1.axvline(0, color=INK, lw=1, ls="--", gid="ref", label="overlap split (bin 0)")
+    ax1.axhline(-6, color=MUTED, lw=1, ls="-.", gid="ref", label="-6 dB keep level")
+    ax1.text(0, -18, "15 MHz\noverlap", fontsize=8, color=INK, ha="center", va="center",
+             bbox=dict(fc="white", ec="none", pad=1))
+    ax1.set_xlim(-880, 880)
     ax1.set_ylim(-30, 3)
-    ax1.set_xlabel(r"RF offset $\nu - f_c$ (MHz)")
+    ax1.set_xlabel(r"stitched grid bin $g = n + (f_k - f_c)/\delta f$  ($\delta f$ = 50 kHz)")
     ax1.set_ylabel("dB")
-    ax1.set_title("(a) Two 45 MHz sub-bands on the common 50 kHz grid", fontsize=10, loc="left")
-    ax1.legend(fontsize=8, loc="lower left", frameon=False)
+    top = ax1.secondary_xaxis("top", functions=(lambda g: g * DELTA_F / 1e6, lambda mhz: mhz * 1e6 / DELTA_F))
+    top.set_xlabel(r"$\nu - f_c$ (MHz)", fontsize=8)
+    top.tick_params(labelsize=8)
+    ax1.set_title("(b) Two 45 MHz sub-bands on the common 50 kHz grid", fontsize=10, loc="left", pad=22)
+    ax1.legend(fontsize=7.5, frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.33), ncol=2)
     show = ["stitched, Hann (recommended)", "single 45 MHz step, Hann", "stitched, envelope ref. rounded to 159 samples", "LO phase not removed"]
     for i, name in enumerate(show):
         r, p = cases[name]
@@ -199,12 +300,13 @@ def fig_stitch(rng):
     ax2.set_ylim(-60, 3)
     ax2.set_xlabel("range (m, half path)")
     ax2.set_ylabel("dB re. stitched peak")
-    ax2.set_title(f"(b) Point target at {r0:.0f} m, random LO phase per step, noise-free", fontsize=10, loc="left")
+    ax2.set_title(f"(c) Point target at {r0:.0f} m, random LO phase per step, noise-free", fontsize=10, loc="left")
     ax2.legend(fontsize=8, frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=2)
     for ax in (ax1, ax2):
         ax.grid(color="#e6e5e0", lw=0.6)
         ax.spines[["top", "right"]].set_visible(False)
     fig.tight_layout()
+    check_layout(fig, "fig_stitch")
     fig.savefig(OUT / "fig_stitch.png", dpi=130)
 
 
@@ -254,20 +356,23 @@ def fig_motion(rng):
         print(f"v={v:.2f} m/s: stitch-first {loss_sf[i]:.2f} dB, doppler-first {loss_df[i]:.2f} dB")
 
     v_amb = lam / (4 * t_sweep)
-    fig, ax = plt.subplots(figsize=(7.2, 3.4))
+    fig, ax = plt.subplots(figsize=(7.2, 3.9))
     ax.plot(speeds, loss_sf, color=COLORS[1], lw=2, label="stitch-first: stitch each sweep, FFT over sweeps")
     ax.plot(speeds, loss_df, color=COLORS[0], lw=2, label="Doppler-first: per-step DFT at burst times, then stitch")
     ax.axvline(v_amb, color=INK, lw=1, ls="--")
-    ax.text(v_amb + 0.02, -30, f"$\\lambda/(4T_s)$ = {v_amb:.2f} m/s\n(Doppler aliases beyond)", fontsize=8, color=INK)
+    ax.text(v_amb, 1.5, f"$v_{{amb}}=\\lambda/(4\\bar T_s)$ = {v_amb:.2f} m/s (Doppler aliases beyond)",
+            fontsize=8, color=INK, ha="center", va="bottom", clip_on=False)
     ax.set_xlabel("closing speed (m/s)")
     ax.set_ylabel("loss (dB)")
     ax.set_ylim(-50, 1)
     ax.set_xlim(0, 2)
-    ax.set_title(f"Moving point target: loss at its mid-CPI range (M = {m_sw}, $T_{{step}}$ = 15.3 ms)", fontsize=10, loc="left")
-    ax.legend(fontsize=8, frameon=False, loc="center left", bbox_to_anchor=(0.0, 0.42))
+    ax.set_title(f"Moving point target: loss at its mid-CPI range (M = {m_sw}, $T_{{step}}$ = 15.3 ms)",
+                 fontsize=10, loc="left", pad=16)
+    ax.legend(fontsize=8, frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.22), ncol=1)
     ax.grid(color="#e6e5e0", lw=0.6)
     ax.spines[["top", "right"]].set_visible(False)
     fig.tight_layout()
+    check_layout(fig, "fig_motion")
     fig.savefig(OUT / "fig_motion.png", dpi=130)
 
 
