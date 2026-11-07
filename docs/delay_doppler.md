@@ -46,8 +46,7 @@ $c_{m,k}$ is the compressed pulse at the leakage peak. Dividing by it leaves
 $Z\propto|X|^2\sum_i(a_i/a_L)e^{-j2\pi(f_k+f)\tau_i}$, which is consistent across steps.
 
 - **The envelope reference must be fractional.** An error $\delta$ creates a phase jump
-  $2\pi\Delta f\delta$ at the junction. Simulated PSL is -29 dB at 0.02 samples, -25.7 dB at 0.05,
-  and -13.4 dB at 0.3 samples, which is what rounding to 159 gives. Fit
+  $2\pi\Delta f\delta$ at the junction. PSL versus $\delta$: Appendix A. Fit
   $\tau_{env}$ once per run, from the band phase slope of the averaged, normalized leakage.
 - **Sign.** Under this model the $\tau_L$ correction is $e^{-j2\pi\nu\tau_L}$. The model follows
   the outline's backprojection kernel $e^{+j2\pi fR/c}$. The outline (p. 6) and the `apply_tau_leak`
@@ -117,16 +116,7 @@ What is ignored:
 - **Zero Doppler.** Leakage and static clutter sit at $f_D=0$. `remove_static_clutter` is a
   display toggle, off by default.
 
-## 7. Other configs
-
-For any $N$: $f_k=f_c+(k-\tfrac{N-1}{2})\Delta f$, and the split points fall midway between
-adjacent step centres.
-
-- **Raise an error** if $\Delta f/\delta f$ is not an integer.
-- **Warn** if $\Delta f>0.9B$: the spectral gaps give grating lobes at multiples of $c/(2\Delta f)$
-  [`levanon2004`; `wehner1995`].
-- $\bar T_s\approx NT_{step}$, so $v_{amb}\propto1/N$.
-- The envelope tolerance is $\delta\lesssim10°/(360°\,\Delta f)$.
+Other configurations ($N\neq2$): Appendix A.
 
 ## 8. Test list for Step 3
 
@@ -161,6 +151,23 @@ Derivation and formulas, checked by the model: **high**. Not yet tested on hardw
 
 The literature supports the method choices only: **medium-high**. Lord and Yuan are cited from
 their abstracts, and Wehner and Levanon at chapter level.
+
+## Appendix A
+
+### A.1 Envelope-error PSL (from §3)
+
+Simulated PSL is -29 dB at 0.02 samples, -25.7 dB at 0.05, and -13.4 dB at 0.3 samples, which is what rounding to 159 gives.
+
+### A.2 Other configs
+
+For any $N$: $f_k=f_c+(k-\tfrac{N-1}{2})\Delta f$, and the split points fall midway between
+adjacent step centres.
+
+- **Raise an error** if $\Delta f/\delta f$ is not an integer.
+- **Warn** if $\Delta f>0.9B$: the spectral gaps give grating lobes at multiples of $c/(2\Delta f)$
+  [`levanon2004`; `wehner1995`].
+- $\bar T_s\approx NT_{step}$, so $v_{amb}\propto1/N$.
+- The envelope tolerance is $\delta\lesssim10°/(360°\,\Delta f)$.
 
 ## Sources
 
