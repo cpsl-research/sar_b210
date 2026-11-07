@@ -98,13 +98,14 @@ spec is `tools/gui_shots.json`.
 
 ## Tutorials
 
-Short, copy-pasteable lessons in [`docs/tutorials/`](docs/tutorials/). Do 0 to 2 in order; none opens the radio.
+Short, copy-pasteable lessons in [`docs/tutorials/`](docs/tutorials/). Do 0 to 2 in order, then 5 to design your own waveform; none opens the radio.
 
 0. [Install and the host doctor](docs/tutorials/00_install.md): clone, `uv sync`, `host_setup.py`, build the capture
 1. [Configs and the GUI](docs/tutorials/01_gui.md): shipped vs user configs, hardware limits, the `b210_sar.configs` CLI, the Configs tab
 2. [The GUI on recorded runs](docs/tutorials/02_gui_on_files.md): run folders, HDF5, the simulator
 3. [The GUI live over ROS 2](docs/tutorials/03_gui_live_ros.md): pending hardware runs
 4. [Troubleshooting](docs/tutorials/04_troubleshooting.md): setup and file errors; hardware entries pending
+5. [Design a waveform](docs/tutorials/05_design_a_waveform.md): generate a config from range and velocity targets, edit, save, check
 
 ## Python
 
