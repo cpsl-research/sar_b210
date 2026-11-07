@@ -3,12 +3,12 @@ import { initConfigs } from "./configs.js";
 import { initFileView, onMessage as fileMessage } from "./fileview.js";
 
 const status = document.getElementById("status");
-let connected = false, last = "";
+let connected = false, last = "", live = false;
 function render() {
   status.textContent = connected ? (last || "connected") : "disconnected";
-  document.getElementById("statusdot").className = "dot " + (connected ? "ok" : "bad");
+  document.getElementById("statusdot").className = "dot " + (!connected ? "bad" : live ? "ok" : "");  // neutral grey for no source / idle
 }
-connectStream((m) => { fileMessage(m); if (m.type === "status") { last = `source ${m.source}: ${m.msg || m.state}`; render(); } },
+connectStream((m) => { fileMessage(m); if (m.type === "status") { live = m.source !== "none" && m.state !== "idle"; last = `source ${m.source}: ${m.msg || m.state}`; render(); } },
               (up) => { connected = up; render(); });
 
 const tabBtns = [...document.querySelectorAll("#tabs button")];

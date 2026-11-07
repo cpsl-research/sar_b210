@@ -47,3 +47,5 @@ pre { background:var(--bg); border:1px solid var(--line); border-radius:6px; pad
 canvas { max-width:100%; background:var(--bg); border:1px solid var(--line); border-radius:6px; display:block; margin:8px 0; }
 #fv-steps span { display:inline-block; padding:0 6px; margin-right:4px; border:1px solid var(--line); border-radius:8px; }
 @media (max-width:600px) { main { padding:8px; } .col.list { max-width:none; } .pill { margin-left:0; } #cfg-fields input { width:110px; } #fv-pos { width:100% !important; } }
+
+#cfg-derived-wrap { overflow-x:auto; }

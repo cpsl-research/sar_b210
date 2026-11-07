@@ -21,3 +21,5 @@ view that always came up); radar_gui `before/radar_gui/{cfg,configs}-*`; console
 | 11 | Header | Live stats strip and session pill with Set up | - | defer: needs capture/session; out of scope (no radio) |
 | 12 | Data view | 3D/point cloud, ADC, Tune, Logs tabs | - | defer: intentionally dropped (no point cloud, no DCA1000) |
 | 13 | Config list | Filter box, multi-select delete, file-preview pane | low | defer: list is tiny; revisit when it grows |
+| 14 | Layout/nav | Configs derived-numbers table clipped at 390 px | low | fixed (horizontal scroll inside its card) |
+| 15 | Status/error | Status dot green with source none; others grey for no session | low | fixed (grey unless a source is open) |
