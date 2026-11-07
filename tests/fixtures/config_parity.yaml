@@ -85,6 +85,10 @@ cases:
     set: {antenna.gain_dbi: null}
     errors:
       - {field: antenna.gain_dbi, text: "antenna.gain_dbi is needed"}
+  - name: tx_rx_separation_not_positive
+    set: {antenna.tx_rx_separation_m: 0}
+    errors:
+      - {field: antenna.tx_rx_separation_m, text: "antenna.tx_rx_separation_m must be positive"}
   - name: dwell_not_whole_chirps
     set: {waveform.dwell_s: 0.001001}
     errors:

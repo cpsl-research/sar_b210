@@ -45,12 +45,13 @@ timing:
   sync_mode: "host_clock"      # [owner] pps | host_clock; depends on the autonomy stack time base
 
 antenna:
-  type: "UWB PCB horn"         # [fixed]
-  gain_dbi: 8                  # [fixed] owner value at 2.4 GHz; used for the EIRP check
+  type: "RFspace TSA900-12000 tapered-slot PCB (0.9-12 GHz), vertical pol."  # [fixed]
+  gain_dbi: 8                  # [fixed] datasheet value at 2.7 GHz, conservative for EIRP at 2.44 GHz; used for the EIRP check
   beamwidth_deg: 60            # [fixed] owner value at 2.4 GHz; sets the along-track spacing rule
+  tx_rx_separation_m: 0.15     # [measure] along-track distance between TX and RX antennas; image formation uses it
 
 platform:
-  planned_speed_mps: 0.5       # [start] limit is about 2.3 m/s (lambda/3) with an 18 ms sweep; slower adds integration
+  planned_speed_mps: 0.5       # [start] limit is about 1.1 m/s (lambda/3) with a 36.4 ms sweep; slower adds integration
 
 output:
   dataset_root: null           # USB SSD mount point, set per machine

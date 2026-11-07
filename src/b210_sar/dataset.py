@@ -13,8 +13,27 @@ import numpy as np
 import numpy.typing as npt
 import yaml
 
-from b210_sar.config import RunConfig, load_config, parse_config
+from b210_sar.config import ConfigError, RunConfig, load_config, parse_config
 from b210_sar.positions import AntennaPositions
+
+LEGACY_TX_RX_SEPARATION_M = 0.15  # datasets recorded before b210-30 have no antenna.tx_rx_separation_m
+
+
+def _load_run_config(path: Path) -> RunConfig:
+    """load_config for a dataset's config.yaml; an older one without antenna.tx_rx_separation_m gets 0.15 m.
+
+    Shipped and user configs stay strict (the field is required); only recorded runs are backfilled, so
+    that they still open. The backfilled value is a placeholder, not a measurement of that run.
+    """
+    raw = yaml.safe_load(Path(path).read_text())
+    ant = raw.get("antenna") if isinstance(raw, dict) else None
+    if isinstance(ant, dict) and "tx_rx_separation_m" not in ant:
+        ant["tx_rx_separation_m"] = LEGACY_TX_RX_SEPARATION_M
+    cfg, issues = parse_config(raw)
+    if cfg is None:
+        raise ConfigError(issues)
+    return cfg
+
 
 IQ_FILE = "iq.sc16"
 BURSTS_FILE = "bursts.csv"
@@ -286,7 +305,7 @@ class RunFolderSource(SweepSource):
             raise FileNotFoundError(f"{self.path}: not a run folder (no {BURSTS_FILE})")
         cfg_path = self.path / CONFIG_FILE
         self.config_text = cfg_path.read_text() if cfg_path.is_file() else ""
-        self.config = load_config(cfg_path) if cfg_path.is_file() else None
+        self.config = _load_run_config(cfg_path) if cfg_path.is_file() else None
         self.bursts = _read_csv_struct(self.path / BURSTS_FILE, BURST_DTYPE)
         cs = self.path / CLOCK_SYNC_FILE
         self.clock_sync = _read_csv_struct(cs, CLOCK_SYNC_DTYPE) if cs.is_file() else None

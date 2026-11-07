@@ -142,6 +142,7 @@ RunConfig parse_run_config(const std::string& yaml_text) {
     c.antenna.type = antenna.required<std::string>("type");
     c.antenna.gain_dbi = antenna.nullable<double>("gain_dbi");
     c.antenna.beamwidth_deg = antenna.required<double>("beamwidth_deg");
+    c.antenna.tx_rx_separation_m = antenna.required<double>("tx_rx_separation_m");
     antenna.reject_unknown_keys();
 
     Section platform(root, "platform");
@@ -398,6 +399,9 @@ ConfigReport validate_config(const RunConfig& c, const HwLimits& limits) {
     }
     if (!c.antenna.gain_dbi) {
         add("antenna.gain_dbi", "antenna.gain_dbi is needed for the EIRP check");
+    }
+    if (c.antenna.tx_rx_separation_m <= 0) {
+        add("antenna.tx_rx_separation_m", "antenna.tx_rx_separation_m must be positive");
     }
     if (rf.tx_gain_db > rf.max_tx_gain_db) {
         add("rf.tx_gain_db", "rf.tx_gain_db " + g(rf.tx_gain_db) + " dB is above this config's rf.max_tx_gain_db " +

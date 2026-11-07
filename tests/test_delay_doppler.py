@@ -19,6 +19,7 @@ from b210_sar import budget, sim
 from b210_sar.chirp import generate_chirp, write_replica
 from b210_sar.config import config_dir, load_config
 from b210_sar.dataset import open_source
+from b210_sar.dataset import _load_run_config
 from b210_sar.processing import calibration as cal
 from b210_sar.processing import delay_doppler as dd
 from b210_sar.processing.pulse import average_chirps, range_compress
@@ -88,7 +89,7 @@ def dip_db(r, p, r1, r2):
 @pytest.mark.skipif(not (RUN / "chirp_replica.cf32").exists(), reason="real run folder not on this machine")
 def test_01_generate_chirp_matches_real_replica(tmp_path):
     real = np.fromfile(RUN / "chirp_replica.cf32", dtype=np.complex64)
-    g = generate_chirp(load_config(RUN / "config.yaml").waveform)
+    g = generate_chirp(_load_run_config(RUN / "config.yaml").waveform)
     assert g.dtype == np.complex64 and g.shape == real.shape == (1120,)
     assert np.abs(g - real).max() <= 3e-5
     write_replica(g, tmp_path / "r.cf32")
@@ -440,3 +441,25 @@ def test_dc_bin_interpolated_not_a_hole():
         floors[mode] = 20 * np.log10(a[(rp.ranges_m > 27) & (rp.ranges_m < 47)].max() / a.max())
     assert floors["interpolate"] < -70.0, floors
     assert floors["zero"] > -60.0, floors
+
+
+# ---- b210-30: the stitch warning fires on holes, not on a spacing ratio --------------------------------------
+
+def _processor_warnings(cfg):
+    import warnings as _w
+    with _w.catch_warnings(record=True) as rec:
+        _w.simplefilter("always")
+        dd.Processor(cfg)
+    return [str(x.message) for x in rec if "hole" in str(x.message)]
+
+
+def test_stitch_no_holes_warning_on_first_sar_config():
+    c = load_config(config_dir() / "sar_first_2x40.yaml")
+    assert _processor_warnings(c) == []
+
+
+def test_stitch_holes_warning_when_spacing_equals_bandwidth():
+    c = dataclasses.replace(load_config(config_dir() / "sar_first_2x40.yaml"))
+    c = dataclasses.replace(c, waveform=dataclasses.replace(c.waveform, step_spacing_hz=40e6, chirp_bandwidth_hz=40e6))
+    msgs = _processor_warnings(c)
+    assert len(msgs) == 1 and "holes" in msgs[0] and "MHz" in msgs[0]

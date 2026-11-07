@@ -59,6 +59,7 @@ struct RunConfig {
         std::string type;
         std::optional<double> gain_dbi;
         double beamwidth_deg = 0;
+        double tx_rx_separation_m = 0;
     } antenna;
 
     struct Platform {

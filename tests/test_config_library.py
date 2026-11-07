@@ -346,3 +346,39 @@ def test_cli_check_text_run_dir_prints_measured_block(tmp_path):
     assert "measured sweep period (5 sweeps" in p.stdout and "mean 30.00 ms" in p.stdout and "planned 36.40 ms" in p.stdout
     assert "delay-Doppler (measured, M=64)" in p.stdout
     assert "measured" not in _cli("--check", str(DEFAULT)).stdout
+
+
+# ---- b210-30: first-SAR config, antenna.tx_rx_separation_m -----------------------------------------------
+
+SAR_FIRST = ROOT / "configs/sar_first_2x40.yaml"
+
+
+def test_sar_first_config_validates_and_budget():
+    c = cfgmod.load_config(SAR_FIRST)
+    rep = cfgmod.validate(c)
+    assert rep.valid and not rep.warnings, rep
+    assert (c.waveform.num_steps, c.waveform.chirp_bandwidth_hz, c.waveform.step_spacing_hz) == (2, 40e6, 38e6)
+    assert (c.platform.planned_speed_mps, c.antenna.tx_rx_separation_m) == (0.15, 0.15)
+    b = bud.compute_budget(c)
+    assert abs(b.total_bandwidth_hz - 78e6) < 1 and abs(b.sweep_time_s - 0.0364) < 5e-5
+
+
+def test_default_carries_separation_and_missing_field_is_rejected():
+    assert cfgmod.load_config(DEFAULT).antenna.tx_rx_separation_m == 0.15
+    r = raw()
+    del r["antenna"]["tx_rx_separation_m"]  # required, not defaulted: old configs must be updated explicitly
+    assert "antenna.tx_rx_separation_m" in {i.field for i in cfgmod.parse_config(r)[1]}
+    r = raw()
+    r["antenna"]["tx_rx_separation_m"] = -0.1
+    assert "antenna.tx_rx_separation_m" in fields(check(r))
+
+
+def test_old_dataset_config_without_separation_still_opens(tmp_path):
+    from b210_sar.dataset import LEGACY_TX_RX_SEPARATION_M, _load_run_config
+    r = raw()
+    del r["antenna"]["tx_rx_separation_m"]
+    p = tmp_path / "config.yaml"
+    p.write_text(yaml.safe_dump(r))
+    assert _load_run_config(p).antenna.tx_rx_separation_m == LEGACY_TX_RX_SEPARATION_M
+    with pytest.raises(cfgmod.ConfigError):
+        cfgmod.load_config(p)

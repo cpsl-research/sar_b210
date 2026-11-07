@@ -75,6 +75,7 @@ class AntennaConfig:
     type: str
     gain_dbi: float | None
     beamwidth_deg: float
+    tx_rx_separation_m: float
 
 
 @dataclass(frozen=True)
@@ -344,6 +345,8 @@ def validate(cfg: "RunConfig | Mapping | None", limits: dict | None = None) -> R
                 f"{band.min_hz / 1e6:.2f}-{band.max_hz / 1e6:.2f} MHz")
     if cfg.antenna.gain_dbi is None:
         add("antenna.gain_dbi", "antenna.gain_dbi is needed for the EIRP check")
+    if cfg.antenna.tx_rx_separation_m <= 0:
+        add("antenna.tx_rx_separation_m", "antenna.tx_rx_separation_m must be positive")
     if rf.tx_gain_db > rf.max_tx_gain_db:
         add("rf.tx_gain_db", f"rf.tx_gain_db {rf.tx_gain_db:g} dB is above this config's rf.max_tx_gain_db {rf.max_tx_gain_db:g} dB")
 

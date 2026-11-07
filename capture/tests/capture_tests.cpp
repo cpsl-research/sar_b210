@@ -271,6 +271,28 @@ void test_validation_blocks_unsafe_configs() {
     CHECK(!validate_config(c).warnings.empty());
 }
 
+// ----- first-SAR config and antenna.tx_rx_separation_m (b210-30) -----
+
+void test_sar_first_config_and_separation() {
+    const RunConfig c = load_run_config(std::string(SAR_SOURCE_DIR) + "/configs/sar_first_2x40.yaml");
+    CHECK(c.waveform.num_steps == 2);
+    CHECK_NEAR(c.waveform.chirp_bandwidth_hz, 40e6, 1);
+    CHECK_NEAR(c.waveform.step_spacing_hz, 38e6, 1);
+    CHECK_NEAR(c.platform.planned_speed_mps, 0.15, 1e-12);
+    CHECK_NEAR(c.antenna.tx_rx_separation_m, 0.15, 1e-12);
+    const ConfigReport report = validate_config(c);
+    CHECK(report.errors.empty() && report.warnings.empty());
+    const Budget b = compute_budget(c);
+    CHECK_NEAR(b.total_bandwidth_hz, 78e6, 1);
+    CHECK_NEAR(b.sweep_time_s, 0.0364, 5e-5);
+    // the field is required (both parsers reject a config without it)
+    std::string text = default_config().source_text;
+    const auto at = text.find("  tx_rx_separation_m:");
+    CHECK(at != std::string::npos);
+    text.erase(at, text.find('\n', at) - at + 1);
+    CHECK(throws([&] { parse_run_config(text); }, "tx_rx_separation_m"));
+}
+
 // ----- hardware limits (configs/hw_limits.yaml) and Python parity -----
 
 // tests/fixtures/config_parity.yaml is the table tests/test_config_library.py checks too: same configs, same
@@ -878,6 +900,7 @@ int main() {
 #define T(name) {#name, name}
         T(test_default_config_is_valid),
         T(test_parser_rejects_bad_files),
+        T(test_sar_first_config_and_separation),
         T(test_validation_blocks_unsafe_configs),
         T(test_parity_table_matches_python),
         T(test_hw_limits_found_next_to_config_and_loaded),

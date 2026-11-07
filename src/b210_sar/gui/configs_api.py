@@ -51,6 +51,7 @@ _F = [
     ("platform.planned_speed_mps", "planned speed", "Capture", "float", "m/s", "1", "platform speed during capture"),
     ("antenna.gain_dbi", "antenna gain", "Capture", "float", "dBi", "1", "used for the EIRP check"),
     ("antenna.beamwidth_deg", "antenna beamwidth", "Capture", "float", "deg", "1", "sets the along-track spacing rule"),
+    ("antenna.tx_rx_separation_m", "TX-RX separation", "Capture", "float", "m", "1", "along-track distance between TX and RX antennas"),
 ]
 _OPTIONS = {"rf.tx_antenna": ["TX/RX", "RX2"], "rf.rx_antenna": ["TX/RX", "RX2"], "timing.sync_mode": ["host_clock", "pps"]}
 FIELDS: list[dict] = [dict(key=k, label=l, group=g, kind=kd, unit=u, scale=sc, hint=h,

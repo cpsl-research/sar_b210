@@ -156,9 +156,6 @@ class Processor:
                 f"step spacing {w.step_spacing_hz:g} Hz is not a multiple of the FFT bin "
                 f"f_s/N_c = {self.bin_hz:g} Hz (ratio {d:.4f}); stitching needs an integer ratio")
         d = int(round(d))
-        if self.num_steps > 1 and w.step_spacing_hz > 0.9 * w.chirp_bandwidth_hz:
-            warnings.warn(f"step spacing {w.step_spacing_hz:g} Hz > 0.9 x chirp bandwidth: spectral gaps, "
-                          "grating lobes at multiples of c/(2 delta_f)", stacklevel=2)
         steps = list(range(self.num_steps)) if self.steps is None else sorted(int(k) for k in self.steps)
         if not steps or min(steps) < 0 or max(steps) >= self.num_steps:
             raise ValueError(f"steps {self.steps} outside 0..{self.num_steps - 1}")
@@ -191,6 +188,19 @@ class Processor:
             raise ValueError("no bins kept")
         self.grid_min, self.grid_max = int(allg.min()), int(allg.max())
         n_grid = self.grid_max - self.grid_min + 1
+        # Grid bins no step keeps. Each step's DC bin is excluded (interpolated, or deliberately zeroed by
+        # dc="zero"), and so is a single isolated bin: the chirp-edge spectrum ripples about the keep threshold
+        # at the split midpoint, which costs one 50 kHz bin (2 x 40 MHz at 38 MHz spacing) and is not a gap.
+        kept = np.zeros(n_grid, dtype=bool)
+        kept[np.union1d(allg, [int(centre[k]) for k in steps]) - self.grid_min] = True
+        miss = np.flatnonzero(~kept)
+        runs = np.split(miss, np.flatnonzero(np.diff(miss) > 1) + 1) if miss.size else []
+        n_holes = sum(r.size for r in runs if r.size > 1)
+        if n_holes:
+            warnings.warn(f"stitched spectrum has holes: {n_holes} bins ({n_holes * self.bin_hz / 1e6:.2f} MHz) of "
+                          f"{n_grid * self.bin_hz / 1e6:.2f} MHz are kept by no step (step spacing "
+                          f"{w.step_spacing_hz:g} Hz vs chirp bandwidth {w.chirp_bandwidth_hz:g} Hz); "
+                          "expect grating lobes at multiples of c/(2 delta_f)", stacklevel=2)
         win = _window(self.range_window, n_grid)
         norm = win[allg - self.grid_min].sum()
         self.stitched_bandwidth_hz = n_grid * self.bin_hz

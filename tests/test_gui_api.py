@@ -205,7 +205,8 @@ EXPECTED = {
     "waveform.chirp_length_s", "waveform.dwell_s", "waveform.chirps_per_dwell", "waveform.taper_fraction",
     "waveform.tx_amplitude", "timing.retune_s", "timing.settle_margin_s", "timing.command_lead_s",
     "timing.lock_timeout_s", "timing.clock_sync_interval_s", "timing.max_run_s", "timing.sync_mode",
-    "platform.planned_speed_mps", "antenna.gain_dbi", "antenna.beamwidth_deg"}
+    "platform.planned_speed_mps", "antenna.gain_dbi", "antenna.beamwidth_deg",
+    "antenna.tx_rx_separation_m"}
 
 
 def test_fields_endpoint_exact_list_and_groups(client):
