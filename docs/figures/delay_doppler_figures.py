@@ -70,7 +70,7 @@ def normalize(ys, ys_leak, tau_env, tau_l=TAU_L):
     """Per-step LO-phase removal: divide by the leakage peak value, align envelopes, apply tau_L.
 
     c_k is read from the leakage component only, so the plotted profiles show the target lobe
-    without the leakage lobe at 0 m (in real data c_k is the full profile at the leakage peak).
+    without the 0.3 m leakage lobe (not plotted) (in real data c_k is the full profile at the leakage peak).
     """
     out = []
     for k, (y, yl) in enumerate(zip(ys, ys_leak)):
@@ -267,7 +267,7 @@ def fig_stitch(rng):
     w, psl, *_ = metrics(r_rect, p_rect, r0)
     print(f"stitched, rectangular | {w:.2f} | {psl:.1f}")
 
-    fig, (ax0, ax1, ax2) = plt.subplots(3, 1, figsize=(7.2, 9.8), gridspec_kw={"height_ratios": [1.05, 1, 1.6]})
+    fig, (ax0, ax1, ax2) = plt.subplots(3, 1, figsize=(7.2, 9.8), gridspec_kw={"height_ratios": [0.85, 1, 1.6]})
     draw_chain(ax0)
     ax0.set_title("(a) Processing chain (Step 3 code): blue per burst, orange per CPI of $M$ sweeps", fontsize=10, loc="left")
     x2 = np.abs(X) ** 2
@@ -290,7 +290,7 @@ def fig_stitch(rng):
     top = ax1.secondary_xaxis("top", functions=(lambda g: g * DELTA_F / 1e6, lambda mhz: mhz * 1e6 / DELTA_F))
     top.set_xlabel(r"$\nu - f_c$ (MHz)", fontsize=8)
     top.tick_params(labelsize=8)
-    ax1.set_title("(b) Two 45 MHz sub-bands on the common 50 kHz grid", fontsize=10, loc="left", pad=22)
+    ax1.set_title("(b) Two 45 MHz sub-bands on the common 50 kHz grid", fontsize=10, loc="left", pad=20)
     ax1.legend(fontsize=7.5, frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.33), ncol=2)
     show = ["stitched, Hann (recommended)", "single 45 MHz step, Hann", "stitched, envelope ref. rounded to 159 samples", "LO phase not removed"]
     for i, name in enumerate(show):
@@ -300,12 +300,14 @@ def fig_stitch(rng):
     ax2.set_ylim(-60, 3)
     ax2.set_xlabel("range (m, half path)")
     ax2.set_ylabel("dB re. stitched peak")
-    ax2.set_title(f"(c) Point target at {r0:.0f} m, random LO phase per step, noise-free", fontsize=10, loc="left")
+    ax2.set_title(f"(c) Point target at {r0:.0f} m, 100° LO-phase difference between steps, noise-free", fontsize=10, loc="left")
     ax2.legend(fontsize=8, frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=2)
     for ax in (ax1, ax2):
         ax.grid(color="#e6e5e0", lw=0.6)
         ax.spines[["top", "right"]].set_visible(False)
-    fig.tight_layout()
+    fig.tight_layout(h_pad=0.3)
+    pos = ax0.get_position()                      # tight_layout leaves a blank band under the chain: stretch (a) into it
+    ax0.set_position([pos.x0, pos.y0 - 0.055, pos.width, pos.height + 0.055])
     check_layout(fig, "fig_stitch")
     fig.savefig(OUT / "fig_stitch.png", dpi=130)
 
