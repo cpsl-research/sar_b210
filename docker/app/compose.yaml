@@ -1,0 +1,72 @@
+# sar_b210 capture / ROS node / GUI. Run from the repo root (paths below are relative to this file):
+#   docker compose -f docker/app/compose.yaml --profile demo up demo   # GUI, no radio, http://127.0.0.1:8010/
+#   docker compose -f docker/app/compose.yaml --profile hw run --rm capture ...   # real B210, see docs/docker.md
+# Everything is RX-only by default: nothing here sets a transmit flag.
+name: sar_b210
+
+x-build: &build
+  context: ../..
+  dockerfile: docker/app/Dockerfile
+  target: runtime
+
+# Shared by the services that open the B210. No `privileged`.
+x-radio: &radio
+  image: sar_b210:dev
+  build: *build
+  profiles: ["hw"]
+  # Host networking: ROS 2 DDS discovery, and the GUI binds GUI_HOST on the host.
+  network_mode: host
+  user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+  # USB_GID = group that owns the B210's /dev/bus/usb node (plugdev, gid 46, on Ubuntu; the host's 60-uhd-host.rules sets it).
+  group_add: ["${USB_GID:-46}"]
+  # The whole USB tree is bind-mounted, not one node: the B210 re-enumerates (new device number) after the FPGA
+  # image loads, and a single-node mapping goes stale. The cgroup rule allows USB char devices (major 189) that
+  # appear after the container started.
+  volumes:
+    - "${USB_DEV:-/dev/bus/usb}:/dev/bus/usb"
+    - "${RUN_ROOT:-../../runs}:/runs"
+  device_cgroup_rules: ["c 189:* rwm"]
+  # memlock/rtprio are capped by the host's limits (limits.d, see `host_setup.py --scope host`), not by these.
+  cap_add: [SYS_NICE]
+  ulimits:
+    memlock: -1
+    rtprio: 99
+  restart: "no"
+
+services:
+  demo:
+    image: sar_b210:dev
+    build: *build
+    profiles: ["demo"]
+    # GUI only (--source none: Configs tab and file view); no device, no ROS traffic.
+    ports: ["127.0.0.1:${GUI_PORT:-8010}:8010"]
+    command: ["gui", "--host", "0.0.0.0", "--port", "8010", "--source", "none"]
+    restart: "no"
+
+  # Validation only by default (no radio opened). Real run, RX-only:
+  #   docker compose -f docker/app/compose.yaml --profile hw run --rm capture \
+  #       /app/configs/default.yaml /runs/NAME --rx-only --duration 10
+  capture:
+    <<: *radio
+    entrypoint: ["docker-entrypoint.sh", "capture"]
+    command: ["--check", "/app/configs/default.yaml"]
+
+  # The ROS 2 node: opens the radio when a Start request arrives (RX-only unless the request says transmit + confirm).
+  node:
+    <<: *radio
+    entrypoint: ["docker-entrypoint.sh", "node"]
+    command: []
+
+  # The GUI on the hardware host: no radio access needed, so no USB device (only the run folders).
+  gui:
+    image: sar_b210:dev
+    build: *build
+    profiles: ["hw"]
+    network_mode: host
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    # The GUI has no authentication: keep GUI_HOST on loopback unless you trust the network.
+    command: ["gui", "--host", "${GUI_HOST:-127.0.0.1}", "--port", "${GUI_PORT:-8010}"]
+    volumes:
+      - "${RUN_ROOT:-../../runs}:/runs"
+      - "../../configs/user:/app/configs/user"
+    restart: "no"

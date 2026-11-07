@@ -8,3 +8,4 @@ log/
 configs/user/*
 !configs/user/README.md
 runs/
+docker/app/.env

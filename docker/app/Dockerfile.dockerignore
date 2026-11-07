@@ -1,0 +1,19 @@
+# Whitelist: the build context is the repo root, but only these paths enter the image.
+# (A per-Dockerfile ignore file beats any root .dockerignore, so harness files cannot change this.)
+*
+!pyproject.toml
+!uv.lock
+!src
+!capture
+!ros2
+!configs
+!tests/fixtures/config_parity.yaml
+!docker/app/entrypoint.sh
+# never host build trees, user configs, caches or run output
+configs/user
+capture/build
+**/build
+**/install
+**/log
+**/__pycache__
+**/.venv
