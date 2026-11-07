@@ -1,9 +1,9 @@
 # Stepped-frequency radar: a primer for sar_b210
 
 All numbers are for `configs/default.yaml`. Formulas are those of
-[`delay_doppler.md`](../delay_doppler.md) §5; derivations are in its §2-§4 and are not repeated here.
+[`docs/delay_doppler.md`](../delay_doppler.md) (the method doc) §5; derivations are in its §2-§4 and are not repeated here.
 Every number below is printed by `docs/figures/stepped_frequency_primer_figures.py` from `b210_sar.budget`.
-Terms: $c$ is the speed of light; the *carrier* is the centre of the stitched band, $f_c$ = 2441.75 MHz, and
+Terms: $c$ = 299 792 458 m/s (with 3e8, $R_{amb}$ below would read 3000 m); the *carrier* is the centre of the stitched band, $f_c$ = 2441.75 MHz, and
 $\lambda=c/f_c$ = 12.28 cm is its wavelength (for a new config, use its `center_freq_hz`).
 
 ## 1. One chirp: delay becomes frequency
@@ -12,7 +12,8 @@ The radar transmits a linear sweep (a chirp) of bandwidth $B$ over a time $T_c$.
 same sweep, late by the round-trip delay $\tau$. At any instant the echo is therefore at a slightly different
 frequency than what is being sent, and that difference is proportional to $\tau$ (Fig. 1). Mixing the echo with the
 transmit signal turns it into a tone; matched filtering it (correlating the echo against a copy of the transmitted
-chirp, which is what sar_b210 does, §2 of the method doc) gives a peak. Either way delay maps to a frequency or peak position, and range is $R=c\tau/2$.
+chirp) gives a peak. sar_b210 does the matched filter (method doc §2); the beat tone is the same
+information seen another way. Either way delay maps to a frequency or peak position, and range is $R=c\tau/2$.
 
 ![Fig. 1](../figures/fig_sfp_chirp.png)
 
@@ -24,11 +25,12 @@ resolves 3.33 m.
 
 ## 2. Stepping and stitching: more band than one chirp can carry
 
-Range resolution comes from bandwidth, and one chirp is limited to what the radio passes: about 56 MHz at
-56 MS/s, of which the default uses 45 MHz. So the radar retunes its centre frequency by $\Delta f$,
+Range resolution comes from bandwidth, and one chirp is limited to what the radio passes: complex (I/Q) baseband at
+$f_s$ = 56 MS/s covers about 56 MHz, of which the default uses 45 MHz so the filter edges stay clear. So the radar retunes its centre frequency by $\Delta f$,
 sends the next chirp, and glues the sub-bands side by side in the frequency domain (Fig. 2). The occupied
-band is $B_{tot}=(N-1)\Delta f+B$. The synthesizer phase is random after every retune, so the pieces only add
-coherently after each step is referenced to its own leakage (method doc §3, stitching in §4). The sub-bands overlap
+band is $B_{tot}=(N-1)\Delta f+B$. The synthesizer phase is random after every retune. The leakage (the direct TX-to-RX path, a strong echo at a known
+delay in every step) is a reference: dividing each step by its own leakage phase removes that random phase, so the pieces add coherently
+(method doc §3, stitching §4). The sub-bands overlap
 on purpose: the weak, tapered chirp edges are discarded, and the overlap keeps the band continuous after that.
 
 ![Fig. 2](../figures/fig_sfp_stitch.png)
@@ -50,37 +52,39 @@ warns above $\Delta f>0.9B$ (40.5 MHz here): the discarded edges eat into the ov
 ![Fig. 3](../figures/fig_sfp_grating.png)
 
 *Fig. 3. Range profile of a point target, flat spectrum, no window (illustrative, not the processing chain). Left: the default, first sidelobe −13.5 dB.
-Right: $\Delta f$ = 60 MHz, above the 40.5 MHz warning, a lobe at −7.8 dB near $c/(2\Delta f)$ = 2.50 m.*
+Right: $\Delta f$ = 60 MHz, above the 40.5 MHz warning: a shoulder at −7.8 dB beside the mainlobe, near $c/(2\Delta f)$ = 2.50 m.*
 
 Default: $\Delta R$ = 2.00 m (3.33 m with one step), $R_{amb}$ = 2998 m (exact $c$). $\Delta f/B$ = 0.67, so no gaps.
 
 ## 4. Doppler across sweeps: speed from slow time
 
-A moving target changes its delay a little from sweep to sweep, which rotates the echo's phase. A **sweep** is one
-pass through all $N$ steps, and takes a time $T_s$ (assumed uniform from sweep to sweep). Following one range bin
-(one delay cell of width $\Delta R$) over $M$ sweeps, the **slow time** axis, which together form the coherent
-processing interval (CPI), the phase rotation is a Doppler frequency, just as range was a frequency within a chirp.
+Within a chirp, range is a frequency: this is **fast time**. A moving target also changes its delay a little from sweep
+to sweep, which rotates the echo's phase. A **sweep** is one pass through all $N$ steps, taking $T_s$ (assumed uniform). Take
+one range bin (one delay cell, $\Delta R$ wide) and follow its phase over $M$ consecutive sweeps. The sweep-to-sweep index is
+**slow time**, sampled once per $T_s$, and the $M$ sweeps form one coherent processing interval (CPI). The phase rotation
+across them is a Doppler frequency.
 A target closing at speed $v$ gives $f_D=2v/\lambda$. Sweeps sample it once per $T_s$, so $f_D$ is unambiguous only within
-$\pm 1/(2T_s)$, i.e. $v_{amb}=\pm\lambda/(4T_s)$ (faster targets alias), and over $M$ sweeps $f_D$ resolves to
-$1/(MT_s)$, i.e. a velocity resolution $\lambda/(2MT_s)$. A slow sweep hurts the first; a short CPI hurts the second (Fig. 4).
+$\pm 1/(2T_s)$, i.e. the **unambiguous velocity** is $\pm v_{amb}=\pm\lambda/(4T_s)$, a full span of $2v_{amb}$ (faster targets alias), and over $M$ sweeps $f_D$ resolves to
+$1/(MT_s)$, i.e. a velocity resolution $\lambda/(2MT_s)$. (Fig. 4).
 
 ![Fig. 4](../figures/fig_sfp_velocity.png)
 
-*Fig. 4. Left: $v_{amb}$ against $T_s$. Right: velocity resolution against $M$.*
+*Fig. 4. Left: $v_{amb}$ against $T_s$. Right: velocity resolution against $M$, both $T_s$ shown (values at $M$ = 64 annotated).*
 
 Default, $M$ = 64, with the two $T_s$ of §5: planned 36.40 ms gives $v_{amb}$ = ±0.84 m/s, resolution 2.6 cm/s;
 the measured 30.637 ms (RX-only run) gives ±1.00 m/s and 3.1 cm/s. Use ±0.84 m/s for planning a TX+RX run.
 
 ## 5. The time budget: where $T_s$ comes from
 
-Each step costs three things, in order: **retune** (the synthesizer, the local oscillator that sets the carrier, moves and
-locks), **wait** (the oscillator settles, and the timed commands, which the host issues ahead of the burst so TX and RX start on a
-chosen clock tick, lead it) and **dwell** (the burst: here 50 chirps of 20 µs; averaging them gains 10 log10 50 = 17 dB of
-signal-to-noise ratio, as the noise is independent between chirps). The radar samples complex baseband as `sc16` (16-bit I and Q).
-The sweep is $N$ steps of that (Fig. 5), so every design choice lands on $T_s$:
+Each step costs three things, in order: **retune** (`retune_s`: the synthesizer, the local oscillator that sets the carrier, is commanded to the new frequency and
+locks; 9.2 ms here, measured on the B210), **wait** (`settle_margin_s`: after locking, the oscillator's phase and leakage keep drifting for
+a while, so the burst is held back until it is stable; 8.0 ms, or `command_lead_s` + $T_c$ = 2.02 ms if that is longer, since the host
+issues the timed TX/RX commands that far ahead of the burst) and **dwell** (`dwell_s` = 1.0 ms: 50 chirps of 20 µs, whose average
+gains 10 log10 50 = 17 dB of signal-to-noise ratio, as noise is independent between chirps). The radar samples as `sc16` (16-bit I and Q).
+$T_s$ is therefore **derived, not an input**: $T_s\approx N\times$(retune + wait + dwell), here 2 × 18.2 ms. A config that asks for a
+faster sweep than this arithmetic allows is inconsistent. Fig. 5 shows the budget.
 
-- more steps $N$ give more band but a proportionally slower sweep, so a smaller $v_{amb}$;
-- a longer dwell gives more energy per step and a slower sweep.
+More steps $N$ or a longer dwell buy band or energy at the price of a slower sweep, hence a smaller $v_{amb}$.
 
 ![Fig. 5](../figures/fig_sfp_timing.png)
 

@@ -183,13 +183,15 @@ for lab, tv, col, off in [("planned", TS_PLAN, ORANGE, (14, 8)), ("measured", TS
                     textcoords="offset points", xytext=off, fontsize=7.5, color=col,
                     ha="left" if off[0] > 0 else "left")
 axs[0].set_xlabel("sweep period $T_s$ (ms)")
-axs[0].set_ylabel("unambiguous speed $v_{amb}$ (m/s)")
-axs[0].set_title("span $=\\lambda/(4T_s)$", fontsize=9)
+axs[0].set_ylabel("$v_{amb}$ (m/s)")
+axs[0].set_title("unambiguous velocity $\\pm v_{amb}=\\pm\\lambda/(4T_s)$", fontsize=9)
 axs[0].set_ylim(0, 4.2)
 for tv, lab, col in [(TS_PLAN, "planned", ORANGE), (TS_MEAS, "measured", GREEN)]:
     axs[1].plot(ms, 100 * LAM / (2 * ms * tv), "o-", color=col, label=lab)
-axs[1].plot([M], [100 * LAM / (2 * M * TS_MEAS)], "o", mfc="none", mec=INK, ms=11)
-axs[1].text(M * 1.08, 100 * LAM / (2 * M * TS_MEAS) * 1.25, f"M=64: {DD_MEAS.velocity_resolution_mps * 100:.1f} cm/s", fontsize=7.5)
+for tv, col, dy in [(TS_PLAN, ORANGE, 0.55), (TS_MEAS, GREEN, 1.45)]:
+    v = 100 * LAM / (2 * M * tv)
+    axs[1].annotate(f"M=64: {v:.1f} cm/s", (M, v), textcoords="offset points", xytext=(10, 8) if col == GREEN else (-85, -6),
+                    fontsize=7.5, color=col)
 axs[1].set_xscale("log", base=2)
 axs[1].set_xticks(ms)
 axs[1].set_xticklabels([str(m) for m in ms])
