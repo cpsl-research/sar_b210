@@ -22,3 +22,13 @@ pre { background:#0e1114; border:1px solid var(--line); padding:8px; overflow:au
 #cfg-formactions, #cfg-actions { display:flex; gap:8px; margin:8px 0; }
 #cfg-issues p { margin:2px 0; }
 @media (max-width:600px) { .col.list { max-width:none; } }
+select { background:#0e1114; color:var(--fg); border:1px solid var(--line); padding:3px 6px; border-radius:3px; }
+.banner { padding:6px 10px; margin-bottom:10px; border:1px solid var(--line); border-radius:4px; display:none; }
+.banner.show { display:block; } .banner.ok { border-color:var(--ok); } .banner.warn { border-color:var(--warn); } .banner.bad { border-color:var(--bad); }
+#fv-files { list-style:none; padding:0; margin:6px 0; max-height:60vh; overflow:auto; }
+#fv-files li { padding:3px 6px; cursor:pointer; border-bottom:1px solid var(--line); } #fv-files li:hover { background:#1d242b; }
+#fv-files li.run, #fv-files li.h5 { color:var(--acc); }
+#fv-controls, #fv-params { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:6px 0; }
+#fv-params input[type=number] { width:5.5em; }
+canvas { max-width:100%; background:#0e1114; border:1px solid var(--line); display:block; margin:8px 0; }
+#fv-steps span { display:inline-block; padding:0 6px; margin-right:4px; border:1px solid var(--line); border-radius:8px; }

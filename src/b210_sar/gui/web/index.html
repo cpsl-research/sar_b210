@@ -10,13 +10,49 @@
 <header>
   <h1>B210 SAR</h1>
   <nav id="tabs">
-    <button data-tab="configs" class="active">Configs</button>
-    <button data-tab="data" disabled title="file and live data arrive in later steps">Data</button>
+    <button data-tab="configs">Configs</button>
+    <button data-tab="data" class="active">File view</button>
   </nav>
   <span id="status" class="muted">connecting...</span>
 </header>
 <main>
-  <section id="tab-configs">
+  <section id="tab-data">
+    <div id="fv-report" class="banner"></div>
+    <div class="cols">
+      <div class="col list">
+        <h2>Open</h2>
+        <div class="small"><span id="fv-dir" class="muted"></span> <button id="fv-up">up</button></div>
+        <ul id="fv-files"></ul>
+        <p class="muted small" id="fv-msg"></p>
+      </div>
+      <div class="col detail">
+        <h2 id="fv-title">No file open</h2>
+        <div id="fv-controls">
+          <button id="fv-back">&laquo; back</button>
+          <button id="fv-play">play</button>
+          <button id="fv-step">step &raquo;</button>
+          <input type="range" id="fv-pos" min="0" max="0" value="0" style="width:16em">
+          <span id="fv-posl" class="muted small"></span>
+        </div>
+        <div id="fv-params" class="small">
+          <label>M sweeps/map <input id="fv-m" type="number" min="2" max="512" value="64" size="4"></label>
+          <label>window <select id="fv-window"><option>hann</option><option>hamming</option><option>rect</option></select></label>
+          <label>hop <input id="fv-hop" type="number" min="1" value="1" size="3"></label>
+          <label>maps/s <input id="fv-rate" type="number" min="0.2" max="10" step="0.2" value="5" size="3"></label>
+          <label>max range (m) <input id="fv-maxr" type="number" min="5" max="2000" value="300" size="5"></label>
+          <label>leakage path (m) <input id="fv-leak" type="number" min="0" step="0.1" placeholder="none" size="5"></label>
+          <label><input id="fv-static" type="checkbox"> remove static</label>
+          <label>dB range <input id="fv-dbspan" type="number" min="5" max="120" value="50" size="4"></label>
+          <label>top dB <input id="fv-dbtop" type="number" placeholder="auto" size="5"></label>
+        </div>
+        <canvas id="fv-dd" width="900" height="420"></canvas>
+        <canvas id="fv-prof" width="900" height="200"></canvas>
+        <div id="fv-meta" class="small"></div>
+        <div id="fv-steps" class="small"></div>
+      </div>
+    </div>
+  </section>
+  <section id="tab-configs" hidden>
     <div class="cols">
       <div class="col list">
         <h2>Configs</h2>
