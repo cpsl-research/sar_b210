@@ -82,6 +82,19 @@ against `CLOCK_MONOTONIC` and `CLOCK_REALTIME`. Each burst lasts `num_samples / 
 | T9 | Simulator (build early) | `b210_sar/sim.py` | |
 | T10 | Field runbook | `docs/runbook.md` | |
 
+## GUI
+
+A browser GUI for the config library (browse shipped and user configs, copy,
+check against the B210 hardware limits, save to `configs/user/`). It never
+opens the radio.
+
+    uv sync --extra gui
+    env -u PYTHONPATH uv run --extra gui python -m b210_sar.gui --port 8010
+
+Then open `http://localhost:8010/`. Short guide: `docs/tutorials/01_gui.md`.
+Screenshots of it can be taken with console's `tools/pagecap.py --url`; the
+spec is `tools/gui_shots.json`.
+
 ## Python
 
     uv sync && uv run pytest
