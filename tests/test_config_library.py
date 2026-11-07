@@ -250,3 +250,46 @@ def test_save_refusals(lroot):
 def test_shipped_default_untouched_and_user_dir_ignored():
     assert subprocess.run(["git", "-C", str(ROOT), "check-ignore", "-q", "configs/user/x.yaml"]).returncode == 0
     assert (ROOT / "configs/user/README.md").exists()
+
+
+# ---- CLI (python -m b210_sar.configs) ----
+
+def _cli(*args):
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    env["PYTHONPATH"] = str(ROOT / "src")
+    return subprocess.run([sys.executable, "-m", "b210_sar.configs", *args], capture_output=True, text=True, env=env)
+
+
+def test_cli_check_json_default():
+    import json
+    p = _cli("--check", str(DEFAULT), "--json")
+    assert p.returncode == 0, p.stderr
+    d = json.loads(p.stdout)
+    assert d["valid"] is True and d["errors"] == []
+    assert d["hw_limits_path"].endswith("hw_limits.yaml") and Path(d["hw_limits_path"]).is_file()
+    assert abs(d["derived"]["delay_doppler"]["planned"]["range_resolution_m"] - 2.0) < 0.01
+    assert "budget" in d["derived"]
+
+
+def test_cli_check_json_invalid(tmp_path):
+    import json
+    r = raw()
+    r["rf"]["tx_gain_db"] = 200
+    r["rf"]["max_tx_gain_db"] = 200
+    f = tmp_path / "bad.yaml"
+    f.write_text(yaml.safe_dump(r))
+    p = _cli("--check", str(f), "--json")
+    assert p.returncode == 1
+    d = json.loads(p.stdout)
+    assert d["valid"] is False and any("tx_gain" in e["field"] for e in d["errors"])
+
+
+def test_cli_list_show_and_missing():
+    import json
+    p = _cli("--list", "--json")
+    assert p.returncode == 0
+    names = {e["name"]: e for e in json.loads(p.stdout)["configs"]}
+    assert names["default"]["valid"] is True and names["default"]["kind"] == "shipped"
+    assert _cli("--show", "default").stdout == DEFAULT.read_text()
+    assert _cli("--check", "nonexistent").returncode == 2
+    assert "valid" in _cli("--check", "default").stdout

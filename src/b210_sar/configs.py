@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 import tempfile
 from pathlib import Path
 
 import yaml
 
-from b210_sar.config import config_dir, parse_config, validate
+from b210_sar.config import config_dir, load_config, parse_config, validate
 
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 _NOT_CONFIGS = {"hw_limits"}
@@ -119,3 +120,100 @@ def delete_user(name: str, root: str | Path | None = None) -> None:
     if not path.is_file():
         raise ConfigLibraryError(f"no user config named {stem!r}")
     path.unlink()
+
+
+# ---------------------------------------------------------------------------------------------
+# CLI: python -m b210_sar.configs --list | --show NAME | --check PATH [--json]
+
+def _resolve(arg: str, root: str | Path | None = None) -> Path:
+    """A path, or the name of a shipped/user config."""
+    p = Path(arg)
+    if p.is_file():
+        return p
+    stem = _stem(arg)
+    for cand in (user_dir(root) / f"{stem}.yaml", (Path(root) if root else config_dir()) / f"{stem}.yaml"):
+        if cand.is_file() and stem not in _NOT_CONFIGS:
+            return cand
+    raise FileNotFoundError(f"no config file or name {arg!r}")
+
+
+def check_report(path: str | Path, run_dir: str | Path | None = None, num_sweeps: int = 64) -> dict:
+    """Machine-readable check of one config file: validity, issues, derived numbers, limits table path."""
+    from b210_sar.budget import derived_numbers
+    from b210_sar.config import Issue, hw_limits_path
+
+    out: dict = {"path": str(path), "hw_limits_path": str(hw_limits_path())}
+    try:
+        raw = yaml.safe_load(Path(path).read_text())
+    except (OSError, yaml.YAMLError) as exc:
+        out.update(valid=False, errors=[Issue("<file>", "error", f"cannot read: {exc}", kind="schema").to_dict()],
+                   warnings=[], not_checked_offline=[], derived=None)
+        return out
+    cfg, issues = parse_config(raw)
+    if cfg is None:
+        out.update(valid=False, errors=[i.to_dict() for i in issues if i.severity == "error"],
+                   warnings=[i.to_dict() for i in issues if i.severity == "warning"],
+                   not_checked_offline=[], derived=None)
+        return out
+    out.update(validate(cfg).to_dict())
+    out["derived"] = derived_numbers(cfg, run_dir, num_sweeps)
+    return out
+
+
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+    import json
+
+    ap = argparse.ArgumentParser(prog="python -m b210_sar.configs", description="B210 SAR config library")
+    g = ap.add_mutually_exclusive_group(required=True)
+    g.add_argument("--list", action="store_true", help="list shipped and user configs with validity")
+    g.add_argument("--show", metavar="NAME_OR_PATH", help="print a config's YAML")
+    g.add_argument("--check", metavar="NAME_OR_PATH", help="validate a config and print derived numbers")
+    ap.add_argument("--json", action="store_true", help="machine-readable output (--list, --check)")
+    ap.add_argument("--run-dir", help="--check: add measured sweep timing from a recorded run directory")
+    ap.add_argument("--sweeps", type=int, default=64, help="--check: sweeps per Doppler CPI (default 64)")
+    args = ap.parse_args(argv)
+
+    if args.list:
+        entries = list_configs()
+        if args.json:
+            print(json.dumps({"configs": entries}, indent=2))
+        else:
+            for e in entries:
+                print(f"{e['kind']:8} {e['name']:24} {'valid' if e['valid'] else 'INVALID'}  {e['path']}")
+                for msg in e["errors"]:
+                    print(f"           error: {msg}")
+        return 0
+    try:
+        path = _resolve(args.show or args.check)
+    except FileNotFoundError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if args.show:
+        sys.stdout.write(path.read_text())
+        return 0
+    try:
+        rep = check_report(path, args.run_dir, args.sweeps)
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps(rep, indent=2, default=str))
+    else:
+        from b210_sar.budget import compute_budget, format_budget
+        print(f"{rep['path']}: {'valid' if rep['valid'] else 'INVALID'}")
+        for k in ("errors", "warnings"):
+            for i in rep[k]:
+                print(f"  {k[:-1]}: {i['field']}: {i['message']}")
+        if rep.get("derived"):
+            cfg = load_config(path)
+            print(format_budget(cfg, compute_budget(cfg)), end="")
+            dd = rep["derived"]["delay_doppler"]["planned"]
+            print(f"  delay-Doppler (planned, M={dd['num_sweeps']}): range res {dd['range_resolution_m']:.2f} m, "
+                  f"R_amb {dd['max_unambiguous_range_m']:.0f} m, v span +/-{dd['velocity_span_mps']:.3f} m/s, "
+                  f"dv {dd['velocity_resolution_mps']*100:.2f} cm/s")
+    return 0 if rep["valid"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
