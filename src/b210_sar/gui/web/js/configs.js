@@ -2,15 +2,11 @@ import { api } from "./api.js";
 import { drawWaveform } from "./waveform.js";
 
 const $ = (id) => document.getElementById(id);
-const FIELDS = [
-  ["waveform.num_steps", "num_steps", ""], ["waveform.step_spacing_hz", "step_spacing_hz", "Hz"],
-  ["waveform.chirp_bandwidth_hz", "chirp_bandwidth_hz", "Hz"], ["waveform.chirp_length_s", "chirp_length_s", "s"],
-  ["waveform.dwell_s", "dwell_s", "s"], ["waveform.taper_fraction", "taper_fraction", ""],
-  ["waveform.sample_rate_hz", "sample_rate_hz", "Hz"], ["rf.rx_gain_db", "rx_gain_db", "dB"],
-  ["rf.tx_gain_db", "tx_gain_db", "dB"],
-];
+let table = null;   // GET /api/configs/fields: {fields, readonly, groups}; the only field list
 let selected = null;   // {name, kind: shipped|user|draft, yaml, read_only}
 let editing = false;
+let mode = "edit";     // edit | generate (only while editing a draft)
+const touched = new Set();
 let lastReport = null;
 let genResult = null;
 let timer = null;
@@ -74,6 +70,7 @@ function renderView(rep, text) {
   showIssues(rep); showDerived(rep);
   drawWaveform($("cfg-wave"), rep.timeline);
   $("btn-targets").hidden = !rep.timeline;
+  showBand(rep); markIssues(rep); sampleHint();
   $("cfg-yaml").textContent = text;
   const bad = !rep.valid;
   $("anyway-wrap").hidden = !bad || !editing;
@@ -83,9 +80,22 @@ function renderView(rep, text) {
 
 function setEditing(on) {
   editing = on;
-  for (const i of $("cfg-fields").querySelectorAll("input")) i.disabled = !on;
+  lockForm();
   $("cfg-saveline").hidden = !on;
-  $("ro-note").textContent = on ? "(editing a draft; shipped files are never written)" : selected.read_only ? "(shipped: read-only, copy to edit)" : "(saved config: copy to edit)";
+  $("cfg-mode").hidden = !on;
+  $("ro-note").textContent = on ? "(editing a draft; shipped files are never written)" : selected.read_only ? "(shipped: read-only; press New config to edit a copy)" : "(saved config: press New config to edit a copy)";
+  if (!on) setMode("edit");
+}
+
+function lockForm() {
+  for (const i of $("cfg-fields").querySelectorAll("input,select")) i.disabled = !editing || mode !== "edit" || i.closest("label").classList.contains("ro");
+}
+
+function setMode(m) {
+  mode = m;
+  $("btn-mode-edit").classList.toggle("on", m === "edit"); $("btn-mode-gen").classList.toggle("on", m === "generate");
+  $("gen-card").hidden = !(editing && m === "generate");
+  lockForm();
 }
 
 async function select(name, kind) {
@@ -94,43 +104,115 @@ async function select(name, kind) {
   selected = { name: data.name, kind: data.kind, yaml: data.yaml, read_only: data.read_only };
   $("cfg-title").textContent = data.name;
   $("cfg-body").hidden = false;
-  $("btn-copy").hidden = false; $("btn-delete").hidden = data.read_only;
-  buildForm(data.values);
+  $("btn-new").hidden = false; $("btn-delete").hidden = data.read_only;
+  buildForm(data.display);
   setEditing(false);
   renderView(data.report, data.yaml);
   for (const tr of $("cfg-list").tBodies[0].rows) tr.classList.toggle("sel", tr.dataset.name === name && tr.dataset.kind === kind);
 }
 
-function buildForm(values) {
+function buildForm(display) {
   const box = $("cfg-fields");
   box.replaceChildren();
-  for (const [key, label, unit] of FIELDS) {
-    const l = el("label"); l.append(el("span", `${label} ${unit}`.trim()));
-    const i = el("input"); i.name = key; i.value = values[key] ?? ""; i.dataset.orig = i.value; i.inputMode = "decimal"; i.disabled = true;
-    i.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(check, 150); });
-    l.append(i); box.append(l);
+  touched.clear();
+  if (!table) return;
+  const rows = [...table.fields, ...table.readonly.map((f) => ({ ...f, ro: true }))];
+  for (const g of table.groups) {
+    const det = el("details"); det.open = true; det.dataset.group = g;
+    det.append(el("summary", g));
+    const grid = el("div", undefined, "grp");
+    for (const f of rows.filter((r) => r.group === g)) {
+      const l = el("label", undefined, f.ro ? "ro" : ""); l.dataset.key = f.key; l.title = f.hint || "";
+      l.append(el("span", f.label));
+      const fr = el("span", undefined, "fr");
+      let i;
+      if (f.kind === "enum") {
+        i = el("select");
+        for (const o of f.options) { const op = el("option", o); op.value = o; i.append(op); }
+        i.value = display[f.key] ?? f.options[0];
+      } else {
+        i = el("input"); i.value = display[f.key] ?? ""; i.inputMode = f.kind === "int" ? "numeric" : "decimal";
+      }
+      i.name = f.key; i.dataset.orig = i.value; i.disabled = true;
+      const ev = i.tagName === "SELECT" ? "change" : "input";
+      if (!f.ro) i.addEventListener(ev, () => { touch(f.key); clearTimeout(timer); timer = setTimeout(check, 150); });
+      const mk = el("span", "", "mk");
+      fr.append(mk, i, el("span", f.unit, "fu"));
+      l.append(fr);
+      if (f.key === "waveform.chirp_length_s") { const h = el("span", "", "fh"); h.id = "hint-samples"; l.append(h); }
+      else if (f.hint) l.append(el("span", f.hint, "fh"));
+      grid.append(l);
+    }
+    det.append(grid); box.append(det);
   }
+  lockForm();
 }
 
-// Only fields the user changed are sent; the YAML text stays the source of truth for the rest. (Echoing every
-// displayed value back would round whole-sample quantities such as chirp_length_s and break them.)
+const input = (k) => $("cfg-fields").querySelector(`[name="${k}"]`);
+
+// dwell and chirps-per-dwell are two views of one quantity: the last one touched wins
+function touch(k) {
+  touched.add(k);
+  if (k === "waveform.dwell_s") touched.delete("waveform.chirps_per_dwell");
+  if (k === "waveform.chirps_per_dwell") touched.delete("waveform.dwell_s");
+}
+
+// Only edited fields are sent, as the text typed, in display units: the server converts by decimal shift. (Echoing
+// every displayed value back would round whole-sample quantities such as chirp_length_s and break them.)
 function formFields() {
   const f = {};
-  for (const i of $("cfg-fields").querySelectorAll("input")) {
-    if (i.value === i.dataset.orig) continue;
-    const v = Number(i.value);
-    if (i.value.trim() === "" || !Number.isFinite(v)) throw new Error(`${i.name}: enter a number`);
-    f[i.name] = v;
+  for (const k of touched) {
+    const i = input(k), v = i.value.trim();
+    if (i.tagName !== "SELECT" && (v === "" || !Number.isFinite(Number(v)))) throw new Error(`${k}: enter a number`);
+    f[k] = v;
+  }
+  // a new chirp length keeps the number of chirps per dwell (the dwell follows), unless the dwell itself was edited
+  if (touched.has("waveform.chirp_length_s") && !touched.has("waveform.dwell_s") && !touched.has("waveform.chirps_per_dwell")) {
+    const n = input("waveform.chirps_per_dwell").value.trim();
+    if (/^\d+$/.test(n)) f["waveform.chirps_per_dwell"] = n;
   }
   return f;
+}
+
+// the linked fields not being typed in follow the server's answer
+function syncLinked(display) {
+  for (const k of ["waveform.dwell_s", "waveform.chirps_per_dwell"]) if (!touched.has(k) && display[k] !== undefined) input(k).value = display[k];
+}
+
+function sampleHint() {
+  const h = $("hint-samples"), l = input("waveform.chirp_length_s"), r = input("waveform.sample_rate_hz");
+  if (!h || !l || !r) return;
+  const n = Number(l.value) * Number(r.value);   // us * MS/s
+  if (!Number.isFinite(n) || n <= 0) { h.textContent = ""; return; }
+  const whole = Math.abs(n - Math.round(n)) < 1e-6;
+  h.textContent = whole ? `= ${Math.round(n)} samples` : `= ${+n.toFixed(4)} samples (not a whole number)`;
+  h.className = `fh ${whole ? "" : "bad"}`;
+}
+
+function showBand(rep) {
+  const t = rep.timeline;
+  $("cfg-band").textContent = t ? `start / stop: ${+(t.band_lo_hz / 1e6).toFixed(4)} / ${+(t.band_hi_hz / 1e6).toFixed(4)} MHz (stitched band ${+(t.total_band_hz / 1e6).toFixed(4)} MHz, ${t.num_steps} step${t.num_steps === 1 ? "" : "s"})` : "";
+}
+
+function markIssues(rep) {
+  for (const l of $("cfg-fields").querySelectorAll("label")) { l.classList.remove("err", "warn"); l.querySelector(".mk").textContent = ""; l.querySelector(".mk").title = ""; delete l.dataset.issue; }
+  for (const [sev, list] of [["warn", rep.warnings], ["err", rep.errors]]) {
+    for (const i of list) {
+      const l = $("cfg-fields").querySelector(`label[data-key="${i.field}"]`);
+      if (!l) continue;
+      l.classList.remove("err", "warn"); l.classList.add(sev); l.dataset.issue = sev;
+      const mk = l.querySelector(".mk"); mk.textContent = "!"; mk.title = i.message;
+    }
+  }
 }
 
 // Live recompute: every edit (debounced 150 ms) re-checks the draft and redraws the diagram.
 async function check() {
   let fields;
   try { fields = formFields(); } catch (e) { $("cfg-issues").replaceChildren(el("p", e.message, "bad")); $("btn-save").disabled = true; return null; }
-  const { data } = await api("/api/configs/check", { method: "POST", body: { yaml: selected.yaml, fields } });
+  const { data } = await api("/api/configs/check", { method: "POST", body: { yaml: selected.yaml, display: fields } });
   if (!data || !data.ok) { $("cfg-issues").replaceChildren(el("p", data ? data.error : "check failed", "bad")); $("btn-save").disabled = true; return null; }
+  syncLinked(data.display);
   renderView(data.report, data.yaml);
   return { data, fields };
 }
@@ -141,7 +223,7 @@ async function save() {
   const c = await check();
   if (!c) return;
   const anyway = !c.data.report.valid && $("cfg-anyway").checked;
-  const { status, data } = await api("/api/configs", { method: "POST", body: { name, yaml: selected.yaml, fields: c.fields, allow_invalid: anyway } });
+  const { status, data } = await api("/api/configs", { method: "POST", body: { name, yaml: selected.yaml, display: c.fields, allow_invalid: anyway } });
   if (status !== 201) { $("cfg-issues").append(el("p", `not saved: ${data.error}`, "bad")); return; }
   await loadList();
   await select(data.name, "user");
@@ -186,7 +268,7 @@ function loadDraft() {
   if (!genResult) return;
   selected = { name: "generated", kind: "draft", yaml: genResult.yaml, read_only: false };
   $("cfg-title").textContent = "draft (unsaved): generated";
-  $("cfg-body").hidden = false; $("btn-copy").hidden = true; $("btn-delete").hidden = true;
+  $("cfg-body").hidden = false; $("btn-new").hidden = true; $("btn-delete").hidden = true;
   buildForm(genResult.values);
   setEditing(true);
   $("cfg-newname").value = "generated";
@@ -196,16 +278,20 @@ function loadDraft() {
 }
 
 export function initConfigs() {
-  $("btn-copy").addEventListener("click", () => {
-    selected = { ...selected, kind: "draft", read_only: false, name: `${selected.name}_copy` };
-    setEditing(true);
+  $("btn-new").addEventListener("click", () => {
+    if (!selected) return;
+    selected = { ...selected, kind: "draft", read_only: false, name: `${selected.name.replace(/_new\d*$/, "")}_new` };
+    setEditing(true); setMode("edit");
     $("cfg-newname").value = selected.name;
     $("cfg-title").textContent = `draft (unsaved): ${selected.name}`;
-    $("btn-copy").hidden = true; $("btn-delete").hidden = true;
+    $("btn-new").hidden = true; $("btn-delete").hidden = true;
+    $("gen-base").value = [...$("gen-base").options].some((o) => o.value === selected.name.replace(/_new$/, "")) ? selected.name.replace(/_new$/, "") : $("gen-base").value;
     badges(lastReport, "draft (unsaved)");
     $("btn-save").disabled = !lastReport.valid && !$("cfg-anyway").checked;
     $("anyway-wrap").hidden = lastReport.valid;
   });
+  $("btn-mode-edit").addEventListener("click", () => setMode("edit"));
+  $("btn-mode-gen").addEventListener("click", () => setMode("generate"));
   $("btn-targets").addEventListener("click", () => {
     const d = lastReport && lastReport.timeline && lastReport.timeline.derived;
     if (!d) return;
@@ -213,6 +299,8 @@ export function initConfigs() {
     $("gen-vmax").value = +d.max_unambiguous_velocity_mps.toFixed(3);
     $("gen-nchirps").value = Math.round(lastReport.timeline.chirps_per_dwell);
     $("gen-msg").textContent = `targets from ${selected.name}`;
+    if (!editing) $("btn-new").click();
+    setMode("generate");
   });
   $("cfg-anyway").addEventListener("change", () => { $("btn-save").disabled = !editing || (!lastReport.valid && !$("cfg-anyway").checked); });
   $("btn-save").addEventListener("click", save);
@@ -220,5 +308,5 @@ export function initConfigs() {
   $("btn-delete").addEventListener("click", del);
   $("btn-gen").addEventListener("click", generate);
   $("btn-gen-load").addEventListener("click", loadDraft);
-  loadList().then(() => { const first = $("cfg-list").tBodies[0].rows[0]; if (first) first.click(); });
+  api("/api/configs/fields").then(({ data }) => { table = data; loadList().then(() => { const first = $("cfg-list").tBodies[0].rows[0]; if (first) first.click(); }); });
 }

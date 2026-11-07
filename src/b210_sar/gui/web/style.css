@@ -62,3 +62,19 @@ svg.wf { display:block; background:var(--bg); border:1px solid var(--line); bord
 #cfg-fields input:disabled { opacity:.65; }
 .saveline { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:8px 0; }
 svg.wf { max-width:760px; } .cols > .col { min-width:0; } #cfg-derived td:first-child { word-break:break-all; }
+
+/* b210-28: grouped parameter form */
+#cfg-mode { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:8px 0; }
+button.seg { border-radius:999px; } button.seg.on { background:var(--acc); color:#fff; border-color:var(--acc); }
+#cfg-fields { display:block; }
+#cfg-fields details { border:1px solid var(--line); border-radius:8px; margin:8px 0; padding:2px 10px; background:var(--bg); }
+#cfg-fields summary { cursor:pointer; padding:6px 0; font-weight:600; }
+#cfg-fields .grp { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(300px,100%),1fr)); gap:6px 16px; margin:4px 0 10px; }
+#cfg-fields label { display:flex; flex-wrap:wrap; justify-content:space-between; gap:2px 8px; align-items:center; color:var(--muted); }
+#cfg-fields label .fh { flex-basis:100%; font-size:11px; opacity:.8; }
+#cfg-fields label .mk { color:var(--bad); font-weight:700; width:1em; text-align:center; }
+#cfg-fields label.warn .mk { color:var(--warn); }
+#cfg-fields label.err input, #cfg-fields label.err select { border-color:var(--bad); }
+#cfg-fields label.warn input, #cfg-fields label.warn select { border-color:var(--warn); }
+#cfg-fields select { width:140px; } #cfg-fields .fr { display:flex; gap:6px; align-items:center; }
+#cfg-fields .fu { display:inline-block; min-width:3.2em; text-align:left; }

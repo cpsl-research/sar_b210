@@ -325,3 +325,14 @@ def test_generated_draft_then_edit_elsewhere_saves(client):
     assert g["ok"] and g["display"]["waveform.chirp_length_s"]
     r = client.post("/api/configs", json={"name": "gen_tweak", "yaml": g["yaml"], "display": {"rf.rx_gain_db": "25"}})
     assert r.status_code == 201, r.text
+
+
+def test_configs_js_ids_exist_in_index_and_no_second_field_list():
+    """Static check: every $("id") in configs.js is in index.html; the form is built from /fields, not a JS list."""
+    import re
+    web = REPO / "src" / "b210_sar" / "gui" / "web"
+    js, html = (web / "js" / "configs.js").read_text(), (web / "index.html").read_text()
+    dynamic = {"hint-samples"}  # created by buildForm
+    missing = [i for i in set(re.findall(r'\$\("([\w-]+)"\)', js)) - dynamic if f'id="{i}"' not in html]
+    assert not missing, missing
+    assert "/api/configs/fields" in js and "rx_gain_db\"," not in js and "btn-copy" not in html + js

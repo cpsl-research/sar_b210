@@ -61,7 +61,7 @@
           <table id="cfg-list"><thead><tr><th>name</th><th>kind</th><th>valid</th><th>sweep</th></tr></thead><tbody></tbody></table>
           <p class="muted small" id="limits-path"></p>
         </div>
-        <div class="card" id="gen-card">
+        <div class="card" id="gen-card" hidden>
           <h2>Generate from targets</h2>
           <p class="muted small">Best effort: an unreachable target gives the closest config and a warning, never an error. Nothing is written until you save.</p>
           <div id="gen-fields">
@@ -87,14 +87,20 @@
           <div id="cfg-badges"></div>
           <div id="cfg-body" hidden>
             <div id="cfg-actions">
-              <button id="btn-copy" class="btn primary">Copy to new...</button>
+              <button id="btn-new" class="btn primary">New config</button>
               <button id="btn-targets" title="Fill the Generate form with this config's range resolution, unambiguous range and velocity">Use its numbers as targets</button>
               <button id="btn-delete" class="danger" hidden>Delete</button>
+            </div>
+            <div id="cfg-mode" hidden>
+              <span class="small muted">New config from:</span>
+              <button type="button" id="btn-mode-edit" class="seg">Edit parameters</button>
+              <button type="button" id="btn-mode-gen" class="seg">Generate from targets</button>
             </div>
             <h3>Waveform construction <span class="muted small">(planned timing; redraws as you edit)</span></h3>
             <div id="cfg-wave"></div>
             <h3>Parameters <span class="muted small" id="ro-note"></span></h3>
             <p class="muted small" id="form-note">Fields are checked against the hardware limits (configs/hw_limits.yaml): errors block saving unless you save anyway; warnings never do.</p>
+            <p class="small" id="cfg-band"></p>
             <div id="cfg-fields"></div>
             <div id="cfg-issues"></div>
             <div class="saveline" id="cfg-saveline" hidden>
