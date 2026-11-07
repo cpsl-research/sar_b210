@@ -3,22 +3,7 @@
 Method for `b210_sar.processing.delay_doppler` (directive b210-13, Step 1). 2026-11-06.
 Parameters come from `configs/default.yaml`, `capture/src/*.cpp` and the RX-only run
 `run_20261106_155516_rx` (1959 bursts, default config). Simulated numbers and figures come from
-`docs/figures/delay_doppler_figures.py`, a noise-free numpy model. Run it with `python3`; the venv
-has no matplotlib.
-
-## TL;DR
-
-- For each burst: matched-filter against `chirp_replica.cf32`, then divide by the leakage peak to
-  remove the random LO phase. Then **align each step's envelope to the leakage with sub-sample
-  accuracy.** Rounding the alignment to whole samples still looks plausible, but sidelobes rise from
-  -32 to -13 dB (Fig. 1b).
-- Stitch in the frequency domain on the 50 kHz grid. Split the overlap at its midpoint, equalize
-  by $1/|X|^2$, and apply one Hann window. Result: 3.0 m -3 dB width and -32 dB PSL, against 5.1 m
-  for one step.
-- For the map, **compute Doppler first** (a per-step DFT at the burst timestamps), then stitch.
-  Stitching first costs a moving target $\cos(\pi f_D T_{step})$, which is -3 dB at 1 m/s (Fig. 2).
-- The measured sweep is **30.64 ms**, not the budget's 36.40 ms. So $v_{amb}$ is **±1.00 m/s**,
-  not ±0.84 m/s.
+`docs/figures/delay_doppler_figures.py`, a noise-free numpy model.
 
 ## 1. Parameters (verified)
 
@@ -62,7 +47,7 @@ $Z\propto|X|^2\sum_i(a_i/a_L)e^{-j2\pi(f_k+f)\tau_i}$, which is consistent acros
 
 - **The envelope reference must be fractional.** An error $\delta$ creates a phase jump
   $2\pi\Delta f\delta$ at the junction. Simulated PSL is -29 dB at 0.02 samples, -25.7 dB at 0.05,
-  and -13.4 dB at 0.3 samples, which is what rounding to 159 gives. The peak barely moves. Fit
+  and -13.4 dB at 0.3 samples, which is what rounding to 159 gives. Fit
   $\tau_{env}$ once per run, from the band phase slope of the averaged, normalized leakage.
 - **Sign.** Under this model the $\tau_L$ correction is $e^{-j2\pi\nu\tau_L}$. The model follows
   the outline's backprojection kernel $e^{+j2\pi fR/c}$. The outline (p. 6) and the `apply_tau_leak`
@@ -83,16 +68,14 @@ RX-only runs, which have no leakage, set $c=1$.
 Use **frequency-domain concatenation** [`wilkinson1998`; `lord1997`; `nel2002`]. Time-domain
 synthesis reconstructs the same band, but it must upsample and frequency-shift every pulse, which
 Lord [`lord2000`] found inefficient. $Z_{m,k}$ goes to bins $n+(f_k-f_c)/\delta f$ (±300), which
-needs $\Delta f/\delta f$ to be an integer (here 600). Tuned frequencies are within 8 mHz of
-nominal.
+needs $\Delta f/\delta f$ to be an integer (here 600).
 
 **Overlap.** The 15 MHz overlap is split at its midpoint, so each bin comes from one step. Adding
 the overlap causes ripple [`yuan2009`]. Here, summing without equalizing gives 3.48 m and -25.9 dB.
 The kept bins are those where $|X|^2>-6$ dB, which drops the taper skirts, equalized by $1/|X|^2$.
 Each step's DC bin is zeroed, because its phase is random after normalization and it would smear
 across Doppler. Then one Hann window is applied (numpy has no Taylor) and the IFFT is zero-padded
-at least 4×. As a free per-burst calibration check, the phase residual between the two steps in
-the overlap can be monitored. That is our proposal, not from the literature.
+at least 4×.
 
 ## 5. Resolution, sidelobes, ambiguities (formulas for b210-11)
 
@@ -106,8 +89,7 @@ the overlap can be monitored. That is our proposal, not from the literature.
 
 There are no grating lobes at $c/(2\Delta f)$ = 5 m, because the sub-bands are contiguous.
 $\bar T_s$ is the mean sweep period of the CPI, taken from the timestamps. **For b210-11:**
-`compute_budget` uses `retune_s` = 9.2 ms and reports 36.40 ms (±0.84 m/s, 2.6 cm/s). Label that
-value as planned; the measured period is shorter.
+`compute_budget` uses `retune_s` = 9.2 ms and reports 36.40 ms (±0.84 m/s, 2.6 cm/s).
 
 ## 6. Target motion
 
@@ -122,9 +104,8 @@ first**, at each burst's own time:
 
 $$D_k(f_D)=\sum_m w_m\,Z_{m,k}\,e^{-j2\pi f_D (t_{m,k}-\bar t)},\qquad f_D=j/(M\bar T_s),$$
 
-then stitch per Doppler bin. This removes the step offset and the jitter. The loss stays under
-0.2 dB up to $v_{amb}$, at a cost of about 12 M complex MACs per $M$ = 64 map. The per-sweep
-stitched $Z$ still serves as the zero-Doppler preview profile.
+then stitch per Doppler bin. The loss stays under
+0.2 dB up to $v_{amb}$, at about 12 M complex MACs per $M$ = 64 map.
 
 What is ignored:
 
@@ -133,8 +114,6 @@ What is ignored:
 - **Range walk over the CPI** [`perry1999`], and the matching $\nu/f_c$ Doppler scaling (±1.5 %).
   Both are negligible while $M\le\Delta R/(2|v|\bar T_s)$: 32 at 1 m/s, 65 at 0.5 m/s. See
   [`wehner1995`, ch. 5] for stepped-frequency velocity effects.
-- **Platform motion.** The map assumes a parked radar. The no-stop-and-go rule still governs
-  imaging.
 - **Zero Doppler.** Leakage and static clutter sit at $f_D=0$. `remove_static_clutter` is a
   display toggle, off by default.
 
@@ -146,10 +125,8 @@ adjacent step centres.
 - **Raise an error** if $\Delta f/\delta f$ is not an integer.
 - **Warn** if $\Delta f>0.9B$: the spectral gaps give grating lobes at multiples of $c/(2\Delta f)$
   [`levanon2004`; `wehner1995`].
-- With zero overlap, the overlap check is lost.
 - $\bar T_s\approx NT_{step}$, so $v_{amb}\propto1/N$.
 - The envelope tolerance is $\delta\lesssim10°/(360°\,\Delta f)$.
-- $N=1$ still needs per-burst normalization.
 
 ## 8. Test list for Step 3
 
@@ -176,8 +153,7 @@ leakage path of 3 m.
 
 ## Confidence
 
-The derivation and the formulas are standard, and the model checks them: **high**. Not yet tested
-on hardware:
+Derivation and formulas, checked by the model: **high**. Not yet tested on hardware:
 
 - whether the antenna leakage is stable enough to serve as $c_{m,k}$;
 - whether $\tau_{env}$ can be fit to 1 ns;
