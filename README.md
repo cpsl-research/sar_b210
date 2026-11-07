@@ -9,7 +9,8 @@ Open issues: [docs/design_notes.md](docs/design_notes.md).
 Integrating with the autonomy stack: [docs/integration_notes.md](docs/integration_notes.md).
 
 **Status:** the C++ capture works and has been tested on a B210 in cabled loopback, not yet over the
-air. Python processing and the simulator are still stubs.
+air. Python processing (calibration, delay-Doppler, the simulator, and `sar-image`: per-burst bistatic
+backprojection with prominent-point autofocus) has run on simulated data only.
 
 ## Capture
 
