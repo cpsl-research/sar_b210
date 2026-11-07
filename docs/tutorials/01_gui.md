@@ -21,7 +21,7 @@ authentication), `--port` (default 8010, or `CONSOLE_B210_GUI_PORT`),
 ## Configs tab
 
 The list shows the shipped configs and your own, each with a badge for
-valid / warnings / errors, and the derived numbers (planned bandwidth, etc.).
+valid / warnings / errors, and the planned delay-Doppler numbers derived from the config.
 
 1. **Shipped configs are read-only.** Select `default` to view its YAML and
    derived numbers. It is never written; saving under a shipped name is
@@ -35,7 +35,7 @@ valid / warnings / errors, and the derived numbers (planned bandwidth, etc.).
 4. **Save.** Writes a new file in `configs/user/` (refused if the name
    exists or the config has errors).
 5. **Delete.** Removes a user config after a confirmation prompt. Shipped
-   configs cannot be deleted.
+   configs cannot be deleted (403).
 
 ## Hardware limits: errors vs warnings
 
