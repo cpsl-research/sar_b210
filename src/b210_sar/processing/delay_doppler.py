@@ -350,8 +350,8 @@ def delay_doppler_map(
     d = np.empty((m,) + z.shape[1:], dtype=complex)
     for k in range(z.shape[1]):
         e = np.exp(-2j * np.pi * fd[:, None] * dt[None, :, k]) * (w * v[:, k])[None, :]
-        d[:, k, :] = e @ z[:, k, :]
-    d /= w.sum()
+        wk = float((w * v[:, k]).sum())  # this step's valid-burst window sum (== w.sum() with no gaps)
+        d[:, k, :] = (e @ z[:, k, :]) / (wk if wk > 0 else 1.0)
     mp = processor.profile(processor.stitch(d))
     return DelayDopplerMap(
         ranges_m=processor.ranges_m,

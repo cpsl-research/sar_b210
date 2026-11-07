@@ -39,6 +39,7 @@ LFM range-Doppler coupling (7 ps) and Doppler within a dwell (< 0.01 dB) are neg
 compression is exact for $\tau+\tau_{sys}\le T_c$, because the TX lead keeps the RX window in
 steady state. Order of operations throughout: average → matched filter → LO/delay correction (§3) →
 Doppler per step (§6) → stitch per Doppler row (§4) → window → IFFT.
+Matched filtering runs at full rate, so there is no residual video phase.
 
 ## 3. Removing the per-step LO phase
 
@@ -178,7 +179,7 @@ adjacent step centres.
 ### A.3 DC bin
 
 With Hann, zeroing the DC bin gives a −54.6 dB floor under the leakage and holds a target 20 dB below the
-leakage to PSL −29.1 dB; interpolating gives −75.7 dB and −31.5 dB.
+leakage to PSL −29.1 dB; interpolating gives −75.7 dB and −31.5 dB. The fill degrades with target range $R$ (neighbour-bin phase step $2\pi\,\delta f\,2R/c$): good to about 300 m, no better than zeroing at about 1.5 km.
 
 ## Appendix B: test list (Step 3, `tests/test_delay_doppler.py`)
 

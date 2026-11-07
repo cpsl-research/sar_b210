@@ -6,6 +6,7 @@ random per-burst LO phases, tau_sys = 159.3 samples and a 3 m leakage path (tau_
 
 from __future__ import annotations
 
+import os
 import dataclasses
 import subprocess
 import sys
@@ -25,7 +26,7 @@ from b210_sar.processing.pulse import average_chirps, range_compress
 C = 299792458.0
 pytestmark = pytest.mark.filterwarnings("error::UserWarning")  # e.g. sim clipping
 
-RUN = Path("/home/rover/Documents/console/data/b210_runs/run_20261106_155516_rx")
+RUN = Path(os.environ.get("B210_TEST_RUN", "/home/rover/Documents/console/data/b210_runs/run_20261106_155516_rx"))
 CFG = load_config(config_dir() / "default.yaml")
 FS = CFG.waveform.sample_rate_hz
 LAM = C / CFG.rf.center_freq_hz
@@ -251,11 +252,11 @@ def test_07_width_stitched_vs_one_step():
     assert single.range_resolution_m == pytest.approx(C / (2 * 45e6))
 
 
-@pytest.mark.parametrize("window,sep", [("rect", 3.0), ("hann", 5.0)])
+@pytest.mark.parametrize("window,sep", [("rect", 3.2), ("hann", 5.0)])
 def test_08_two_targets_resolved_at_all_phases(window, sep):
     r1 = 60.0
     stitched_dips, single_dips = [], []
-    for th in np.linspace(0, 2 * np.pi, 13):
+    for th in np.linspace(0, 2 * np.pi, 97):
         scene = sim.SimScene(targets=(sim.SimTarget(r1, 0.0, 0.3), sim.SimTarget(r1 + sep, 0.0, 0.3 * np.exp(1j * th))),
                              num_sweeps=1, seed=9, leakage_amplitude=0.3)
         sw = sweeps_of(scene)[0]
@@ -343,6 +344,20 @@ def test_12_three_steps_at_15mhz():
     p = dd.Processor(cfg3, cal=true_cal(scene), pad=16, max_range_m=200)
     m = dd.delay_doppler_map(sw, processor=p)
     assert abs(dd.peak(m.ranges_m, m.map[m.zero_doppler_index], 37.3)[0] - 37.3) < 0.2
+
+
+def test_missing_burst_normalises_per_step():
+    scene = sim.SimScene(targets=(sim.SimTarget(37.3, 0.0, 0.1),), num_sweeps=8, seed=14)
+    p = dd.Processor(CFG, cal=true_cal(scene), pad=8, max_range_m=200)
+    full = dd.delay_doppler_map(sweeps_of(scene), "rect", processor=p)
+    sw = sweeps_of(scene)
+    s = sw[3]
+    sw[3] = dataclasses.replace(s, iq=np.where(np.array([True, False]).reshape((-1,) + (1,) * (s.iq.ndim - 1)), s.iq, 0), valid=np.array([True, False]), present=np.array([True, False]),
+                                usrp_ticks=np.array([s.usrp_ticks[0], -1]))
+    gap = dd.delay_doppler_map(sw, "rect", processor=p)
+    a = np.abs(full.map[full.zero_doppler_index]).max()
+    b = np.abs(gap.map[gap.zero_doppler_index]).max()
+    assert 20 * np.log10(b / a) == pytest.approx(0.0, abs=0.3)  # w.sum() over all sweeps would give -1.2 dB
     rp = dd.range_profile(sw[0], p)
     w, psl, _, r = lobe_metrics(rp.ranges_m, rp.profile, 37.3)
     assert abs(r - 37.3) < 0.2

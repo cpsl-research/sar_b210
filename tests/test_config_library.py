@@ -17,7 +17,7 @@ from b210_sar import configs as lib
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT = ROOT / "configs/default.yaml"
-RUN = Path("/home/rover/Documents/console/data/b210_runs/run_20261106_155516_rx")
+RUN = Path(os.environ.get("B210_TEST_RUN", "/home/rover/Documents/console/data/b210_runs/run_20261106_155516_rx"))
 SAR_CAPTURE = next((p for p in (os.environ.get("SAR_CAPTURE"), ROOT / "build/sar_capture") if p and Path(p).exists()), None)
 
 
