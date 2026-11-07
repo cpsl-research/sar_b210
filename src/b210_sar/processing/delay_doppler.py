@@ -167,6 +167,10 @@ class Processor:
         g0 = -((self.num_steps - 1) * d // 2)  # grid bin of f_c (exact for even (N-1)*d)
         self.grid_offset_hz = ((self.num_steps - 1) * d / 2 + g0) * self.bin_hz  # 0 or half a bin
         centre = {k: k * d + g0 for k in steps}  # grid bin of each step centre
+        # Absolute RF of signed grid bin 0 (the IFFT's zero frequency): step k's bin 0 is f_k, at grid bin
+        # centre[k]. Equals f_c when (N-1) d is even. Per-step profiles and backprojection use it.
+        k0 = steps[0]
+        self.reference_freq_hz = float(step_centres(self.config)[k0] - centre[k0] * self.bin_hz)
         if self.dc not in ("interpolate", "zero"):
             raise ValueError(f"dc must be 'interpolate' or 'zero', not {self.dc!r}")
         strong = self.x2 > 10 ** (self.keep_db / 10) * self.x2.max()
@@ -278,6 +282,40 @@ class Processor:
             out[..., dst] = z[..., k, :][..., src] * wt
         for k, dst, w_lo, w_hi in self._dc:
             out[..., dst] = z[..., k, -1] * w_lo + z[..., k, 1] * w_hi
+        return out
+
+    def step_stitch(self, z: np.ndarray, k: int) -> np.ndarray:
+        """Step k's share of the stitch: Z_k (..., N_c) -> (..., n_grid), only the bins step k keeps.
+
+        Same keep/split mask, 1/|X|^2 equalisation, window and DC fill as `stitch`, so summing this over
+        the steps of one sweep gives `stitch` exactly and no overlap bin is counted twice.
+        """
+        z = np.asarray(z)
+        out = np.zeros(z.shape[:-1] + (self.n_grid,), dtype=complex)
+        for kk, src, dst, wt in self._g:
+            if kk == k:
+                out[..., dst] = z[..., src] * wt
+        for kk, dst, w_lo, w_hi in self._dc:
+            if kk == k:
+                out[..., dst] = z[..., -1] * w_lo + z[..., 1] * w_hi
+        return out
+
+    def step_profiles(self, z: np.ndarray, steps: np.ndarray) -> np.ndarray:
+        """Per-burst complex profiles for backprojection: Z (num_bursts, N_c), step of each burst ->
+        (num_bursts, len(ranges_m)), each burst's sub-band alone on the common grid (`step_stitch`).
+
+        Phase convention: a point at two-way delay tau gives Z = A exp(-j 2 pi nu tau) at absolute RF
+        nu = f_k + f (calibration.py module doc), so its profile is
+        s(r) = A exp(-j 2 pi f_ref tau) sum_g W_g exp(+j 2 pi g delta_f (2 r / c - tau)), f_ref =
+        `reference_freq_hz`; at r = c tau / 2 the phase is -2 pi f_ref tau.
+        """
+        z = np.asarray(z)
+        steps = np.asarray(steps, dtype=int)
+        out = np.zeros((z.shape[0], self.ranges_m.size), dtype=complex)
+        for k in self.active_steps:
+            rows = np.flatnonzero(steps == k)
+            if rows.size:
+                out[rows] = self.profile(self.step_stitch(z[rows], k))
         return out
 
     def profile(self, stitched: np.ndarray) -> np.ndarray:
