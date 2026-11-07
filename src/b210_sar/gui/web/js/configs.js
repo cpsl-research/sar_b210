@@ -269,8 +269,8 @@ function loadDraft() {
   selected = { name: "generated", kind: "draft", yaml: genResult.yaml, read_only: false };
   $("cfg-title").textContent = "draft (unsaved): generated";
   $("cfg-body").hidden = false; $("btn-new").hidden = true; $("btn-delete").hidden = true;
-  buildForm(genResult.values);
-  setEditing(true);
+  buildForm(genResult.display);
+  setEditing(true); setMode("edit");
   $("cfg-newname").value = "generated";
   for (const tr of $("cfg-list").tBodies[0].rows) tr.classList.remove("sel");
   renderView(genResult.report, genResult.yaml);
