@@ -134,3 +134,43 @@ def test_set_fields_plain_decimals_and_scope():
 def test_unknown_source_rejected():
     with pytest.raises(ValueError):
         create_app(source="bogus")
+
+
+# ---- b210-25: timeline, generate, save anyway
+
+def test_check_returns_default_timeline(client):
+    text = client.get("/api/configs/default").json()["yaml"]
+    tl = client.post("/api/configs/check", json={"yaml": text}).json()["report"]["timeline"]
+    assert tl["num_steps"] == 2 and tl["chirps_per_dwell"] == 50
+    assert tl["timing"]["step_time_s"] == pytest.approx(0.0182) and tl["timing"]["sweep_time_s"] == pytest.approx(0.0364)
+    assert tl["total_band_hz"] == pytest.approx(75e6) and tl["derived"]["range_resolution_m"] == pytest.approx(2.0, abs=0.01)
+    assert [s["centre_hz"] for s in tl["steps"]] == pytest.approx([2441750000 - 15e6, 2441750000 + 15e6])
+    assert tl["overlap_hz"] == pytest.approx(15e6) and tl["permitted_band"]["max_hz"] == 2483500000
+    assert client.post("/api/configs/check", json={"yaml": "a: [1"}).json()["report"]["timeline"] is None
+
+
+def test_generate_endpoint_and_save_rules(client, root):
+    r = client.post("/api/configs/generate", json={"range_res_m": 2.0, "max_range_m": 3000}).json()
+    assert r["ok"] and r["report"]["valid"] and r["timeline"]["num_steps"] == r["achieved"]["num_steps"]
+    assert client.post("/api/configs", json={"name": "gen1", "yaml": r["yaml"]}).status_code == 201
+    assert client.post("/api/configs/generate", json={"range_res_m": -1, "max_range_m": 3000}).status_code == 400
+    bad = client.post("/api/configs/generate", json={"range_res_m": 2.0, "max_range_m": 3000, "center_freq_hz": 1e10}).json()
+    assert bad["ok"] is False
+    assert client.post("/api/configs", json={"name": "gen2", "yaml": bad["yaml"]}).status_code == 400
+    assert not (root / "user" / "gen2.yaml").exists()
+
+
+def test_save_anyway_marks_invalid_and_never_touches_shipped(client, root):
+    before = sha(root / "default.yaml")
+    text = client.get("/api/configs/default").json()["yaml"]
+    r = client.post("/api/configs", json={"name": "forced", "yaml": text, "fields": {"rf.tx_gain_db": 90}, "allow_invalid": True})
+    assert r.status_code == 201 and r.json()["report"]["valid"] is False
+    f = root / "user" / "forced.yaml"
+    assert f.read_text().startswith("# INVALID")
+    ent = next(c for c in client.get("/api/configs").json()["configs"] if c["name"] == "forced")
+    assert ent["valid"] is False and ent["errors"]
+    # still new names only, shipped read-only, non-YAML never saved
+    assert client.post("/api/configs", json={"name": "forced", "yaml": text, "allow_invalid": True}).status_code == 409
+    assert client.post("/api/configs", json={"name": "default", "yaml": text, "allow_invalid": True}).status_code == 409
+    assert client.post("/api/configs", json={"name": "junk", "yaml": "a: [1", "allow_invalid": True}).status_code == 400
+    assert sha(root / "default.yaml") == before

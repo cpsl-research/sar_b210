@@ -333,3 +333,16 @@ def test_parity_table_cli_exit_codes(tmp_path):
         assert (res.returncode == 0) == (not case.get("errors")), (case["name"], res.stderr)
         for w in case.get("errors", []):
             assert f"{w['field']}: " in res.stderr and w["text"] in res.stderr, (case["name"], res.stderr)
+
+
+def test_cli_check_text_run_dir_prints_measured_block(tmp_path):
+    rows = ["sweep,step,valid,usrp_time_s"]
+    for s in range(5):  # 30 ms sweeps, 15 ms steps
+        rows += [f"{s},0,1,{s * 0.03:.4f}", f"{s},1,1,{s * 0.03 + 0.015:.4f}"]
+    (tmp_path / "bursts.csv").write_text("\n".join(rows) + "\n")
+    p = _cli("--check", str(DEFAULT), "--run-dir", str(tmp_path))
+    assert p.returncode == 0, p.stderr
+    assert "delay-Doppler (planned" in p.stdout
+    assert "measured sweep period (5 sweeps" in p.stdout and "mean 30.00 ms" in p.stdout and "planned 36.40 ms" in p.stdout
+    assert "delay-Doppler (measured, M=64)" in p.stdout
+    assert "measured" not in _cli("--check", str(DEFAULT)).stdout

@@ -73,10 +73,12 @@ def list_configs(root: str | Path | None = None) -> list[dict]:
     return out
 
 
-def save_user(name: str, text: str, root: str | Path | None = None) -> Path:
+def save_user(name: str, text: str, root: str | Path | None = None, allow_invalid: bool = False) -> Path:
     """Validate `text` and write it as a new user config. Refuses a shipped or existing name.
 
-    Warnings do not block a save; any error does (ConfigLibraryError, `.issues` has the fields).
+    Warnings do not block a save; any error does (ConfigLibraryError, `.issues` has the fields) unless
+    `allow_invalid` ("save anyway"): the file is then written with a `# INVALID` header listing the errors, and
+    shows INVALID in the list; capture and launch still refuse to run it. Text that is not YAML is never saved.
     """
     stem = _check_name(name)
     if stem in shipped_names(root):
@@ -89,8 +91,11 @@ def save_user(name: str, text: str, root: str | Path | None = None) -> Path:
     if cfg is not None:
         issues = validate(cfg).issues
     errors = [i for i in issues if i.severity == "error"]
-    if errors:
+    if errors and not (allow_invalid and isinstance(raw, dict)):
         raise ConfigLibraryError("config is invalid: " + "; ".join(str(i) for i in errors), errors)
+    if errors:
+        text = ("# INVALID: saved anyway with errors; capture and launch refuse to run this config.\n"
+                + "".join(f"#   error: {i}\n" for i in errors) + text)
     udir = user_dir(root)
     udir.mkdir(parents=True, exist_ok=True)
     final = udir / f"{stem}.yaml"
@@ -212,6 +217,13 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  delay-Doppler (planned, M={dd['num_sweeps']}): range res {dd['range_resolution_m']:.2f} m, "
                   f"R_amb {dd['max_unambiguous_range_m']:.0f} m, v span +/-{dd['velocity_span_mps']:.3f} m/s, "
                   f"dv {dd['velocity_resolution_mps']*100:.2f} cm/s")
+            if args.run_dir:
+                m, dm = rep["derived"]["measured_run"], rep["derived"]["delay_doppler"]["measured"]
+                print(f"  measured sweep period ({m['sweeps']} sweeps in {args.run_dir}): mean {m['sweep_period_s'] * 1e3:.2f} ms, "
+                      f"max {m['sweep_period_max_s'] * 1e3:.2f} ms (planned {rep['derived']['budget']['sweep_time_s'] * 1e3:.2f} ms)")
+                print(f"  delay-Doppler (measured, M={dm['num_sweeps']}): range res {dm['range_resolution_m']:.2f} m, "
+                      f"R_amb {dm['max_unambiguous_range_m']:.0f} m, v span +/-{dm['velocity_span_mps']:.3f} m/s, "
+                      f"dv {dm['velocity_resolution_mps']*100:.2f} cm/s")
     return 0 if rep["valid"] else 1
 
 

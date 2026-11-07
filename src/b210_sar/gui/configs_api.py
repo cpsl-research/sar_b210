@@ -15,7 +15,9 @@ from fastapi.responses import JSONResponse
 
 from b210_sar import configs as lib
 from b210_sar.budget import derived_numbers
+from b210_sar import generate as gen
 from b210_sar.config import config_dir, hw_limits_path, parse_config, validate
+from b210_sar.timeline import waveform_timeline
 
 # The stepped-waveform fields the form edits: "section.key" -> int (True) or float (False)
 EDITABLE: dict[str, bool] = {
@@ -82,14 +84,15 @@ def _report_text(text: str) -> dict:
     except yaml.YAMLError as exc:
         return {"valid": False, "errors": [{"field": "<yaml>", "severity": "error", "kind": "schema",
                                             "message": f"not valid YAML: {exc}"}],
-                "warnings": [], "not_checked_offline": [], "derived": None}
+                "warnings": [], "not_checked_offline": [], "derived": None, "timeline": None}
     cfg, issues = parse_config(raw)
     if cfg is None:
         return {"valid": False, "errors": [i.to_dict() for i in issues if i.severity == "error"],
                 "warnings": [i.to_dict() for i in issues if i.severity == "warning"],
-                "not_checked_offline": [], "derived": None}
+                "not_checked_offline": [], "derived": None, "timeline": None}
     rep = validate(cfg).to_dict()
     rep["derived"] = _clean(derived_numbers(cfg))
+    rep["timeline"] = _clean(waveform_timeline(cfg))
     return rep
 
 
@@ -152,6 +155,16 @@ def make_router(root: str | Path | None = None) -> APIRouter:
             return err(str(exc))
         return {"ok": True, "yaml": text, "values": _values(text), "report": _report_text(text)}
 
+    @r.post("/generate")
+    def generate(body: dict):
+        try:
+            res = gen.generate(body.get("range_res_m"), body.get("max_range_m"), body.get("max_velocity_mps"),
+                               body.get("chirps_per_dwell") or 50, body.get("center_freq_hz"), body.get("num_steps"),
+                               body.get("base") or "default", root)
+        except (ValueError, FileNotFoundError) as exc:
+            return err(str(exc))
+        return {**_clean(res), "values": _values(res["yaml"]), "report": _report_text(res["yaml"])}
+
     @r.post("")
     def save(body: dict):
         name, text = body.get("name"), body.get("yaml")
@@ -160,7 +173,7 @@ def make_router(root: str | Path | None = None) -> APIRouter:
         try:
             if body.get("fields"):
                 text = set_fields(text, body["fields"])
-            path = lib.save_user(name, text, root)
+            path = lib.save_user(name, text, root, allow_invalid=body.get("allow_invalid") is True)
         except lib.ConfigLibraryError as exc:
             return err(str(exc), 409 if "exists" in str(exc) or "read-only" in str(exc) else 400,
                        issues=[i.to_dict() for i in exc.issues])
