@@ -1,0 +1,24 @@
+:root { --bg:#14181c; --fg:#dde3e8; --muted:#8b97a3; --line:#2a323a; --acc:#4aa3df; --bad:#e0605a; --warn:#d9a33c; --ok:#58b368; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.4 system-ui, sans-serif; }
+header { display:flex; align-items:center; gap:16px; padding:8px 16px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+h1 { font-size:18px; margin:0; } h2 { font-size:16px; margin:0 0 8px; } h3 { font-size:14px; margin:14px 0 6px; }
+nav button { margin-right:4px; }
+button { background:#222a31; color:var(--fg); border:1px solid var(--line); padding:4px 10px; border-radius:4px; cursor:pointer; }
+button.active { border-color:var(--acc); } button:disabled { opacity:.4; cursor:default; }
+button.danger { border-color:var(--bad); color:var(--bad); }
+input { background:#0e1114; color:var(--fg); border:1px solid var(--line); padding:3px 6px; border-radius:3px; }
+main { padding:12px 16px; }
+.cols { display:flex; gap:24px; flex-wrap:wrap; } .col.list { flex:1 1 320px; max-width:460px; } .col.detail { flex:2 1 460px; }
+table { border-collapse:collapse; width:100%; } th, td { text-align:left; padding:3px 8px; border-bottom:1px solid var(--line); }
+#cfg-list tbody tr { cursor:pointer; } #cfg-list tbody tr:hover, #cfg-list tbody tr.sel { background:#1d242b; }
+pre { background:#0e1114; border:1px solid var(--line); padding:8px; overflow:auto; max-height:360px; }
+.muted { color:var(--muted); } .small { font-size:12px; }
+.ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); }
+.badge { display:inline-block; padding:1px 8px; border-radius:10px; border:1px solid var(--line); margin-right:6px; font-size:12px; }
+#cfg-fields { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px,1fr)); gap:6px 16px; margin:8px 0; }
+#cfg-fields label { display:flex; justify-content:space-between; gap:8px; align-items:center; }
+#cfg-fields input { width:140px; text-align:right; }
+#cfg-formactions, #cfg-actions { display:flex; gap:8px; margin:8px 0; }
+#cfg-issues p { margin:2px 0; }
+@media (max-width:600px) { .col.list { max-width:none; } }

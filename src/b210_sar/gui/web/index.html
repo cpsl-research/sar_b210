@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>B210 SAR</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>B210 SAR</h1>
+  <nav id="tabs">
+    <button data-tab="configs" class="active">Configs</button>
+    <button data-tab="data" disabled title="file and live data arrive in later steps">Data</button>
+  </nav>
+  <span id="status" class="muted">connecting...</span>
+</header>
+<main>
+  <section id="tab-configs">
+    <div class="cols">
+      <div class="col list">
+        <h2>Configs</h2>
+        <table id="cfg-list"><thead><tr><th>name</th><th>kind</th><th>valid</th><th>sweep</th></tr></thead><tbody></tbody></table>
+        <p class="muted small" id="limits-path"></p>
+      </div>
+      <div class="col detail">
+        <h2 id="cfg-title">Select a config</h2>
+        <div id="cfg-badges"></div>
+        <div id="cfg-body" hidden>
+          <div id="cfg-actions">
+            <button id="btn-copy">Copy to new...</button>
+            <button id="btn-delete" class="danger" hidden>Delete</button>
+          </div>
+          <form id="cfg-form" hidden>
+            <p class="muted small">Editing a copy. Fields are checked against the hardware limits (configs/hw_limits.yaml): errors block saving, warnings do not.</p>
+            <label>save as <input id="cfg-newname" placeholder="my_config" size="24"></label>
+            <div id="cfg-fields"></div>
+            <div id="cfg-formactions">
+              <button type="button" id="btn-check">Check</button>
+              <button type="button" id="btn-save">Save as new</button>
+              <button type="button" id="btn-cancel">Cancel</button>
+            </div>
+          </form>
+          <div id="cfg-issues"></div>
+          <h3>Derived numbers <span class="muted small" id="basis"></span></h3>
+          <table id="cfg-derived"><tbody></tbody></table>
+          <h3>YAML <span class="muted small" id="ro-note"></span></h3>
+          <pre id="cfg-yaml"></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+<script type="module" src="/js/main.js"></script>
+</body>
+</html>
