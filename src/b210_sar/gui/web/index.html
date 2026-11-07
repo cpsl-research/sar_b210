@@ -9,25 +9,25 @@
 <body>
 <header>
   <h1>B210 SAR</h1>
-  <nav id="tabs">
-    <button data-tab="configs">Configs</button>
-    <button data-tab="data" class="active">File view</button>
+  <nav id="tabs" class="seg" role="tablist" aria-label="Pages">
+    <button role="tab" data-tab="configs" aria-selected="false">Configs</button>
+    <button role="tab" data-tab="data" class="on" aria-selected="true">File view</button>
   </nav>
-  <span id="status" class="muted">connecting...</span>
+  <span class="pill" id="statuspill" role="status" aria-live="polite"><span class="dot" id="statusdot"></span><span id="status">connecting...</span></span>
 </header>
 <main>
   <section id="tab-data">
     <div id="fv-report" class="banner"></div>
     <div class="cols">
-      <div class="col list">
-        <h2>Open</h2>
+      <div class="col list card">
+        <h2>Open a recording</h2>
         <div class="small"><span id="fv-dir" class="muted"></span> <button id="fv-up">up</button></div>
         <ul id="fv-files"></ul>
         <p class="muted small" id="fv-msg"></p>
       </div>
-      <div class="col detail">
+      <div class="col detail card">
         <h2 id="fv-title">No file open</h2>
-        <div id="fv-controls">
+        <div id="fv-controls" hidden>
           <button id="fv-back">&laquo; back</button>
           <button id="fv-play">play</button>
           <button id="fv-step">step &raquo;</button>
@@ -45,8 +45,9 @@
           <label>dB range <input id="fv-dbspan" type="number" min="5" max="120" value="50" size="4"></label>
           <label>top dB <input id="fv-dbtop" type="number" placeholder="auto" size="5"></label>
         </div>
-        <canvas id="fv-dd" width="900" height="420"></canvas>
-        <canvas id="fv-prof" width="900" height="200"></canvas>
+        <p id="fv-empty" class="empty">Choose a run folder or .h5 file in the list; the delay-Doppler map and range profile appear here. Nothing is transmitted or captured from this page.</p>
+        <canvas id="fv-dd" width="900" height="420" hidden></canvas>
+        <canvas id="fv-prof" width="900" height="200" hidden></canvas>
         <div id="fv-meta" class="small"></div>
         <div id="fv-steps" class="small"></div>
       </div>
@@ -54,17 +55,17 @@
   </section>
   <section id="tab-configs" hidden>
     <div class="cols">
-      <div class="col list">
-        <h2>Configs</h2>
+      <div class="col list card">
+        <h2>Configurations</h2>
         <table id="cfg-list"><thead><tr><th>name</th><th>kind</th><th>valid</th><th>sweep</th></tr></thead><tbody></tbody></table>
         <p class="muted small" id="limits-path"></p>
       </div>
-      <div class="col detail">
+      <div class="col detail card">
         <h2 id="cfg-title">Select a config</h2>
         <div id="cfg-badges"></div>
         <div id="cfg-body" hidden>
           <div id="cfg-actions">
-            <button id="btn-copy">Copy to new...</button>
+            <button id="btn-copy" class="btn primary">Copy to new...</button>
             <button id="btn-delete" class="danger" hidden>Delete</button>
           </div>
           <form id="cfg-form" hidden>
@@ -73,7 +74,7 @@
             <div id="cfg-fields"></div>
             <div id="cfg-formactions">
               <button type="button" id="btn-check">Check</button>
-              <button type="button" id="btn-save">Save as new</button>
+              <button type="button" id="btn-save" class="primary">Save as new</button>
               <button type="button" id="btn-cancel">Cancel</button>
             </div>
           </form>

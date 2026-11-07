@@ -90,6 +90,7 @@ function renderReport() {
 function renderMeta() {
   if (!meta || !frame) return;
   const f = frame, m = meta;
+  $("fv-empty").hidden = true; $("fv-dd").hidden = false; $("fv-prof").hidden = false; $("fv-controls").hidden = false;
   $("fv-title").textContent = `${m.name}  sweep ${f.sweep} (${f.pos + 1}/${f.n})`;
   const pos = $("fv-pos"); pos.max = f.n - 1; pos.min = 0; pos.value = f.pos;
   $("fv-posl").textContent = `${f.pos + 1} / ${f.n}`;
