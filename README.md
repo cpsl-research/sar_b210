@@ -9,8 +9,13 @@ Open issues: [docs/design_notes.md](docs/design_notes.md).
 Integrating with the autonomy stack: [docs/integration_notes.md](docs/integration_notes.md).
 
 **Status:** the C++ capture works and has been tested on a B210 in cabled loopback, not yet over the
-air. Python processing (calibration, delay-Doppler, the simulator, and `sar-image`: per-burst bistatic
-backprojection with prominent-point autofocus) has run on simulated data only.
+air. First transmit, 2026-11-07, cabled loopback (TX/RX -> ~10 dB attenuator -> RX2, cable < 0.5 m,
+`sar_first_2x40` with RX gain 10 dB, TX 20 dB, 10 s): 650 bursts, 0 invalid; the stitched delay-Doppler
+map has one peak at Doppler bin 0, -3 dB width 2.83 m (model 2.74 m), PSL -29.2 dB (model -31 dB).
+The inter-step phase is not yet shown at useful SNR (RX at -46 dBFS; overlap-bin phase has a ~7.5 deg
+unexplained offset), so b210-08 must re-measure it. Python processing (calibration, delay-Doppler, the
+simulator, and `sar-image`: per-burst bistatic backprojection with prominent-point autofocus) has
+otherwise run on simulated data only.
 
 ## Capture
 
