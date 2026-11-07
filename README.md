@@ -91,7 +91,7 @@ opens the radio.
     uv sync --extra gui
     env -u PYTHONPATH uv run --extra gui python -m b210_sar.gui --port 8010
 
-Then open `http://localhost:8010/`. Step-by-step guides: the tutorials below.
+Then open `http://localhost:8010/`. Step-by-step guides: the tutorials below. No toolchain on the host? [`docs/docker.md`](docs/docker.md) runs the capture, the ROS 2 node and the GUI from one Docker image.
 Screenshots of it can be taken with console's `tools/pagecap.py --url`; the
 spec is `tools/gui_shots.json`.
 
